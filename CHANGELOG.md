@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Added native DOCX report export.
+- Added native PDF report export.
+- Added generic `export_report(...)` API.
+- Added `reports/` output folder to `export_bundle(...)`.
+- Added generic default report filename: `output_report`.
+- Rewrote README to reflect the broader output-hub scope.
+
 ## 0.1.2
 
 - Added GitHub-ready project files: `.gitignore`, `LICENSE`, `INSTALLATION.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `Makefile`, and GitHub Actions test workflow.

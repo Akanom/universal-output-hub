@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Mapping, Sequence
 import json
 import re
 import shutil
 import warnings
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
 from .adapters import RegressionModel, from_coefficient_table, normalise_model
-from .formatters import as_float, format_number, format_significance_note, normalise_label, safe_filename, significance_stars
+from .formatters import (
+    as_float,
+    format_number,
+    format_significance_note,
+    normalise_label,
+    safe_filename,
+    significance_stars,
+)
 
 
 @dataclass(slots=True)
@@ -381,7 +389,12 @@ class OutputHub:
             raise ValueError(f"Unsupported regression table export format: {fmt}")
         return path
 
-    def export_tables(self, output_dir: str | Path, *, formats: Sequence[str] = ("csv", "xlsx", "html", "md")) -> list[Path]:
+    def export_tables(
+        self,
+        output_dir: str | Path,
+        *,
+        formats: Sequence[str] = ("csv", "xlsx", "html", "md"),
+    ) -> list[Path]:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         written: list[Path] = []
@@ -428,7 +441,14 @@ class OutputHub:
             "<!doctype html>",
             "<html><head><meta charset='utf-8'>",
             f"<title>{self.title}</title>",
-            "<style>body{font-family:Arial,sans-serif;margin:32px;line-height:1.45} table{border-collapse:collapse;margin:16px 0;width:auto} th,td{border:1px solid #ddd;padding:6px 10px;text-align:right} th:first-child,td:first-child{text-align:left} h1,h2{margin-top:28px} img{max-width:100%;height:auto;border:1px solid #eee}</style>",
+            "<style>"
+            "body{font-family:Arial,sans-serif;margin:32px;line-height:1.45}"
+            "table{border-collapse:collapse;margin:16px 0;width:auto}"
+            "th,td{border:1px solid #ddd;padding:6px 10px;text-align:right}"
+            "th:first-child,td:first-child{text-align:left}"
+            "h1,h2{margin-top:28px}"
+            "img{max-width:100%;height:auto;border:1px solid #eee}"
+            "</style>",
             "</head><body>",
             f"<h1>{self.title}</h1>",
         ]
@@ -492,7 +512,11 @@ class OutputHub:
             for fmt in regression_formats:
                 suffix = "md" if fmt == "markdown" else fmt
                 written_regression.append(
-                    self.export_regression_table(reg_dir / f"regression_table.{suffix}", fmt=fmt, **dict(regression_kwargs or {}))
+                    self.export_regression_table(
+                        reg_dir / f"regression_table.{suffix}",
+                        fmt=fmt,
+                        **dict(regression_kwargs or {}),
+                    )
                 )
 
         table_paths = self.export_tables(root / "tables", formats=table_formats) if self.tables else []

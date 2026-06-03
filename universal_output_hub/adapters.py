@@ -6,9 +6,10 @@ plain dictionaries, and coefficient tables exported from Stata/R/SPSS/EViews/etc
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import pandas as pd
 
@@ -152,8 +153,14 @@ def from_coefficient_table(
         name=normalise_label(name),
         depvar=depvar,
         params=_series(indexed[coef_col], name="coef"),
-        std_errors=_series(indexed[se_col], name="se") if se_col and se_col in indexed.columns else pd.Series(dtype="float64"),
-        pvalues=_series(indexed[pvalue_col], name="pvalue") if pvalue_col and pvalue_col in indexed.columns else pd.Series(dtype="float64"),
+        std_errors=(
+            _series(indexed[se_col], name="se") if se_col and se_col in indexed.columns else pd.Series(dtype="float64")
+        ),
+        pvalues=(
+            _series(indexed[pvalue_col], name="pvalue")
+            if pvalue_col and pvalue_col in indexed.columns
+            else pd.Series(dtype="float64")
+        ),
         statistics=dict(statistics or {}),
         diagnostics=dict(diagnostics or {}),
         metadata={"term_col": term_col, "coef_col": coef_col, "se_col": se_col, "pvalue_col": pvalue_col},
@@ -161,7 +168,12 @@ def from_coefficient_table(
     )
 
 
-def _from_mapping(result: Mapping[str, Any], *, name: str | None = None, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+def _from_mapping(
+    result: Mapping[str, Any],
+    *,
+    name: str | None = None,
+    diagnostics: Mapping[str, Any] | None = None,
+) -> RegressionModel:
     model_name = normalise_label(name or result.get("name") or "Model")
     params = result.get("params") or result.get("coef") or result.get("coefs") or result.get("coefficients")
     se = result.get("std_errors") or result.get("standard_errors") or result.get("bse") or result.get("se")
@@ -356,6 +368,8 @@ def normalise_model(
         return _from_statsmodels(result, name=model_name, diagnostics=diagnostics)
     if adapter == "linearmodels" or (adapter == "auto" and "linearmodels" in module):
         return _from_linearmodels(result, name=model_name, diagnostics=diagnostics)
-    if adapter in {"pyfixest", "pyfixest-like"} or (adapter == "auto" and ("pyfixest" in module or "fixest" in class_name)):
+    if adapter in {"pyfixest", "pyfixest-like"} or (
+        adapter == "auto" and ("pyfixest" in module or "fixest" in class_name)
+    ):
         return _from_pyfixest_like(result, name=model_name, diagnostics=diagnostics)
     return _from_generic_object(result, name=model_name, diagnostics=diagnostics)
