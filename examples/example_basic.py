@@ -4,7 +4,6 @@ import pandas as pd
 
 from universal_output_hub import OutputHub
 
-
 out = Path("example_outputs")
 hub = OutputHub("Example research-output bundle", metadata={"project": "systemgmmkit"})
 

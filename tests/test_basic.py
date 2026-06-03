@@ -156,9 +156,18 @@ def test_embedded_diagnostics_are_extracted_from_regression_table() -> None:
     assert output.loc["Entity FE", "System GMM"] == "Yes"
     assert "***" in output.loc["L.y", "System GMM"]
 
+
 def test_table_notes_are_added_below_regression_table(tmp_path: Path) -> None:
     hub = OutputHub("Table Notes Test")
-    hub.add_model({"name": "M1", "params": {"x": 1.0}, "std_errors": {"x": 0.1}, "pvalues": {"x": 0.01}, "statistics": {"N": 100}})
+    hub.add_model(
+        {
+            "name": "M1",
+            "params": {"x": 1.0},
+            "std_errors": {"x": 0.1},
+            "pvalues": {"x": 0.01},
+            "statistics": {"N": 100},
+        }
+    )
     hub.add_table_note("Standard errors in parentheses.")
     table = hub.regression_table()
     assert "Notes" in table.index
