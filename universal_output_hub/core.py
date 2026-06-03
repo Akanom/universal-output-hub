@@ -71,6 +71,7 @@ class OutputHub:
         self.tables: list[TableArtifact] = []
         self.figures: list[FigureArtifact] = []
         self.notes: list[str] = []
+        self.table_notes: list[str] = []
 
     # ------------------------------------------------------------------
     # Add outputs
@@ -261,6 +262,12 @@ class OutputHub:
     def add_note(self, note: str) -> None:
         self.notes.append(str(note).strip())
 
+    def add_table_note(self, note: str) -> None:
+        """Add an outreg-style note displayed below regression/model tables."""
+        cleaned = str(note).strip()
+        if cleaned:
+            self.table_notes.append(cleaned)
+
     # ------------------------------------------------------------------
     # Regression-table construction
     # ------------------------------------------------------------------
@@ -279,6 +286,7 @@ class OutputHub:
         include_depvar: bool = False,
         add_star_note: bool = True,
         star_note: str | None = None,
+        table_notes: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         if not self.models:
             raise ValueError("No models have been added.")
@@ -338,6 +346,10 @@ class OutputHub:
             "Sargan p",
             "Diff-Hansen p",
             "Instruments",
+            "Entity FE",
+            "Time FE",
+            "Fixed effects",
+            "Clustered SE",
         ]
         stat_keys = list(stats_order or default_stats)
         present_stats = [key for key in stat_keys if any(m.stat(key) is not None for m in self.models)]
@@ -347,11 +359,15 @@ class OutputHub:
                 stat_row = []
                 for model in self.models:
                     value = model.stat(key)
-                    if key in {"N", "Instruments"}:
-                        number = as_float(value)
-                        stat_row.append(str(int(round(number))) if number is not None else "")
+                    number = as_float(value)
+                    if key in {"N", "Instruments"} and number is not None:
+                        stat_row.append(str(int(round(number))))
+                    elif number is not None:
+                        stat_row.append(format_number(number, decimals))
+                    elif value is not None:
+                        stat_row.append(str(value))
                     else:
-                        stat_row.append(format_number(value, decimals))
+                        stat_row.append("")
                 rows.append((key, stat_row))
 
         if stars and add_star_note:
@@ -359,6 +375,16 @@ class OutputHub:
             if note:
                 rows.append(("", ["" for _ in self.models]))
                 rows.append(("Significance", [note] + ["" for _ in self.models[1:]]))
+
+        final_table_notes = list(self.table_notes)
+        if table_notes:
+            final_table_notes.extend(str(note).strip() for note in table_notes if str(note).strip())
+
+        if final_table_notes:
+            rows.append(("", ["" for _ in self.models]))
+            for idx, note in enumerate(final_table_notes):
+                label = "Notes" if idx == 0 else ""
+                rows.append((label, [note] + ["" for _ in self.models[1:]]))
 
         df = pd.DataFrame({"term": [r[0] for r in rows]})
         for idx, model in enumerate(self.models):
@@ -429,6 +455,7 @@ class OutputHub:
             "tables": [t.to_dict() for t in self.tables],
             "figures": [f.to_dict() for f in self.figures],
             "notes": self.notes,
+            "table_notes": self.table_notes,
         }
         path = out_dir / "manifest.json"
         path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")

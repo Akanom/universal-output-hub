@@ -108,3 +108,57 @@ def test_comprehensive_output_exports(tmp_path: Path) -> None:
     assert (tmp_path / "bundle" / "regression_tables" / "regression_table.pdf").exists()
     assert "reports" in bundle
     assert "workbook" in bundle
+
+
+def test_embedded_diagnostics_are_extracted_from_regression_table() -> None:
+    hub = OutputHub("Embedded diagnostics")
+
+    table = pd.DataFrame(
+        {
+            "term": [
+                "L.y",
+                "x",
+                "N",
+                "Instruments",
+                "AR(1) p",
+                "AR(2) p",
+                "Hansen p",
+                "Sargan p",
+                "Diff-Hansen p",
+                "Entity FE",
+                "Time FE",
+            ],
+            "coef": [0.42, 0.11, 946, 42, 0.085, 0.316, 0.190, 0.098, 0.089, "Yes", "Yes"],
+            "se": [0.10, 0.04, None, None, None, None, None, None, None, None, None],
+            "pvalue": [0.001, 0.030, None, None, None, None, None, None, None, None, None],
+        }
+    )
+
+    hub.add_model_table(table, name="System GMM")
+
+    output = hub.regression_table()
+
+    assert "L.y" in output.index
+    assert "x" in output.index
+    assert "N" in output.index
+    assert "Instruments" in output.index
+    assert "AR(1) p" in output.index
+    assert "AR(2) p" in output.index
+    assert "Hansen p" in output.index
+    assert "Sargan p" in output.index
+    assert "Diff-Hansen p" in output.index
+    assert "Entity FE" in output.index
+    assert "Time FE" in output.index
+
+    assert output.loc["N", "System GMM"] == "946"
+    assert output.loc["Instruments", "System GMM"] == "42"
+    assert output.loc["Hansen p", "System GMM"] == "0.190"
+    assert output.loc["Entity FE", "System GMM"] == "Yes"
+    assert "***" in output.loc["L.y", "System GMM"]
+
+def test_table_notes_are_added_below_regression_table(tmp_path: Path) -> None:
+    hub = OutputHub("Table Notes Test")
+    hub.add_model({"name": "M1", "params": {"x": 1.0}, "std_errors": {"x": 0.1}, "pvalues": {"x": 0.01}, "statistics": {"N": 100}})
+    hub.add_table_note("Standard errors in parentheses.")
+    table = hub.regression_table()
+    assert "Notes" in table.index

@@ -6,6 +6,7 @@ plain dictionaries, and coefficient tables exported from Stata/R/SPSS/EViews/etc
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,6 +123,144 @@ def _series(value: Any, *, name: str) -> pd.Series:
         return pd.Series(dtype="float64", name=name)
 
 
+# ------------------------------------------------------------------
+# Embedded regression-table statistic extraction
+# ------------------------------------------------------------------
+
+_STAT_ALIASES = {
+    "n": "N",
+    "obs": "N",
+    "nobs": "N",
+    "observations": "N",
+    "numberofobservations": "N",
+    "r2": "R2",
+    "rsquared": "R2",
+    "rsquare": "R2",
+    "adjr2": "Adj. R2",
+    "adjustedr2": "Adj. R2",
+    "adjustedrsquared": "Adj. R2",
+    "withinr2": "Within R2",
+    "overallr2": "Overall R2",
+    "aic": "AIC",
+    "bic": "BIC",
+    "loglikelihood": "Log Likelihood",
+    "fstatistic": "F statistic",
+    "fpvalue": "F p-value",
+    "entityfe": "Entity FE",
+    "countryfe": "Entity FE",
+    "individualfe": "Entity FE",
+    "firmfe": "Entity FE",
+    "unitfe": "Entity FE",
+    "timefe": "Time FE",
+    "yearfe": "Time FE",
+    "periodfe": "Time FE",
+    "fixedeffects": "Fixed effects",
+    "clusteredse": "Clustered SE",
+}
+
+_DIAGNOSTIC_ALIASES = {
+    "ar1p": "AR(1) p",
+    "ar1pvalue": "AR(1) p",
+    "ar1testp": "AR(1) p",
+    "ar2p": "AR(2) p",
+    "ar2pvalue": "AR(2) p",
+    "ar2testp": "AR(2) p",
+    "hansenp": "Hansen p",
+    "hansenjp": "Hansen p",
+    "hansenjtestp": "Hansen p",
+    "hansenpvalue": "Hansen p",
+    "hansenjtestpvalue": "Hansen p",
+    "sarganp": "Sargan p",
+    "sarganpvalue": "Sargan p",
+    "sargantestp": "Sargan p",
+    "diffhansenp": "Diff-Hansen p",
+    "differenceinhansenp": "Diff-Hansen p",
+    "differenceinhansenpvalue": "Diff-Hansen p",
+    "instruments": "Instruments",
+    "numberofinstruments": "Instruments",
+    "ninstruments": "Instruments",
+    "numinstruments": "Instruments",
+}
+
+
+def _compact_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+
+def _first_non_missing(row: pd.Series, columns: Sequence[str | None]) -> Any:
+    for column in columns:
+        if column and column in row.index:
+            value = row[column]
+            try:
+                if pd.notna(value):
+                    return value
+            except Exception:
+                return value
+    return None
+
+
+def _row_has_no_estimation_values(
+    row: pd.Series,
+    *,
+    coef_col: str,
+    se_col: str | None,
+    pvalue_col: str | None,
+) -> bool:
+    non_stat_cols = [se_col, pvalue_col]
+    for column in non_stat_cols:
+        if column and column in row.index:
+            try:
+                if pd.notna(row[column]) and str(row[column]).strip() != "":
+                    return False
+            except Exception:
+                return False
+    return True
+
+
+def _extract_embedded_table_stats(
+    table: pd.DataFrame,
+    *,
+    term_col: str,
+    coef_col: str,
+    se_col: str | None,
+    pvalue_col: str | None,
+) -> tuple[pd.DataFrame, dict[str, Any], dict[str, Any]]:
+    """Extract N/R2/Hansen/AR/Sargan/etc. rows from imported coefficient tables.
+
+    This supports Stata/R/MATLAB/SPSS/EViews-style exports where diagnostics
+    are included as rows below the coefficient rows.
+    """
+    stats: dict[str, Any] = {}
+    diagnostics: dict[str, Any] = {}
+    keep_rows: list[bool] = []
+
+    value_columns = [coef_col, "value", "stat", "statistic", "estimate"]
+
+    for _, row in table.iterrows():
+        term = str(row[term_col])
+        key = _compact_key(term)
+
+        stat_name = _STAT_ALIASES.get(key)
+        diagnostic_name = _DIAGNOSTIC_ALIASES.get(key)
+
+        if (stat_name or diagnostic_name) and _row_has_no_estimation_values(
+            row,
+            coef_col=coef_col,
+            se_col=se_col,
+            pvalue_col=pvalue_col,
+        ):
+            value = _first_non_missing(row, value_columns)
+            if diagnostic_name:
+                diagnostics[diagnostic_name] = value
+            elif stat_name:
+                stats[stat_name] = value
+            keep_rows.append(False)
+        else:
+            keep_rows.append(True)
+
+    return table.loc[keep_rows].copy(), stats, diagnostics
+
+
 def from_coefficient_table(
     table: pd.DataFrame,
     *,
@@ -139,13 +278,31 @@ def from_coefficient_table(
 
     Expected minimum columns are term and coefficient. Standard errors and
     p-values are optional.
+
+    Diagnostic/statistic rows such as N, Hansen p, AR(2) p, Sargan p,
+    Instruments, Entity FE, and Time FE are automatically extracted when they
+    appear as rows in the imported table.
     """
     if term_col not in table.columns:
         raise ValueError(f"term_col='{term_col}' was not found in the coefficient table.")
     if coef_col not in table.columns:
         raise ValueError(f"coef_col='{coef_col}' was not found in the coefficient table.")
 
-    indexed = table.copy()
+    cleaned, embedded_stats, embedded_diagnostics = _extract_embedded_table_stats(
+        table,
+        term_col=term_col,
+        coef_col=coef_col,
+        se_col=se_col,
+        pvalue_col=pvalue_col,
+    )
+
+    final_stats = dict(embedded_stats)
+    final_stats.update(dict(statistics or {}))
+
+    final_diagnostics = dict(embedded_diagnostics)
+    final_diagnostics.update(dict(diagnostics or {}))
+
+    indexed = cleaned.copy()
     indexed[term_col] = indexed[term_col].map(str)
     indexed = indexed.set_index(term_col)
 
@@ -161,8 +318,8 @@ def from_coefficient_table(
             if pvalue_col and pvalue_col in indexed.columns
             else pd.Series(dtype="float64")
         ),
-        statistics=dict(statistics or {}),
-        diagnostics=dict(diagnostics or {}),
+        statistics=final_stats,
+        diagnostics=final_diagnostics,
         metadata={"term_col": term_col, "coef_col": coef_col, "se_col": se_col, "pvalue_col": pvalue_col},
         source=source,
     )
