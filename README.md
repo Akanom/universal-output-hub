@@ -118,7 +118,7 @@ pytest -q
 Windows PowerShell:
 
 ```powershell
-cd "C:\Users\omoko\OneDrive\Python packages\universal-output-hub"
+cd "<UNIVERSAL_OUTPUT_HUB_REPO>"
 
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
