@@ -102,6 +102,12 @@ External software compatibility currently works through structured coefficient t
 
 ## Installation
 
+Install from PyPI:
+
+``bash
+python -m pip install universal-output-hub
+``
+
 Install from GitHub:
 
 ```bash
@@ -626,3 +632,4 @@ This is an early-stage package. The public API is usable, but some internals may
 ## License
 
 MIT License.
+

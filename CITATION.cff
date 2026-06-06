@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: "universal-output-hub: Reproducible Research Output Bundles for Python"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Akanbi
+    given-names: Oluwajuwon
+repository-code: "https://github.com/Akanom/universal-output-hub"
+license: MIT
+version: "0.2.0"
+date-released: "2026-06-06"
+keywords:
+  - research software
+  - reproducible reporting
+  - regression tables
+  - econometrics
+  - outreg2
+  - LaTeX
+  - Excel
+  - Word
+  - PDF
+  - Python
