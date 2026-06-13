@@ -8,7 +8,6 @@ import pandas as pd
 from universal_output_hub.normalizer import normalize_result
 from universal_output_hub.schema import NormalizedResult
 
-
 DEFAULT_STAR_LEVELS: tuple[tuple[float, str], ...] = (
     (0.01, "***"),
     (0.05, "**"),

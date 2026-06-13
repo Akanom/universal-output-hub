@@ -10,7 +10,6 @@ from universal_output_hub.normalizer import normalize_result
 from universal_output_hub.schema import NormalizedCoefficient, NormalizedResult
 from universal_output_hub.table import OutputTable
 
-
 _DIAG_MAP = {
     "n": "nobs",
     "observations": "nobs",
