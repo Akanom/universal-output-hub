@@ -510,6 +510,80 @@ def _from_generic_object(result: Any, *, name: str, diagnostics: Mapping[str, An
         if value is not None:
             stats[label] = value
 
+    def _yes_no(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            lowered = cleaned.lower()
+            if lowered in {"true", "yes", "y", "1", "enabled", "present"}:
+                return "Yes"
+            if lowered in {"false", "no", "n", "0", "disabled", "absent", "none"}:
+                return "No"
+            return "Yes" if cleaned else "No"
+        if isinstance(value, Mapping):
+            return "Yes" if len(value) > 0 else "No"
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return "Yes" if len(value) > 0 else "No"
+        try:
+            return "Yes" if bool(value) else "No"
+        except Exception:
+            return "Yes"
+
+    entity_fe = _first_attr(
+        result,
+        [
+            "entity_effects",
+            "has_entity_effects",
+            "entity_fe",
+            "individual_effects",
+            "has_individual_effects",
+        ],
+        None,
+    )
+    time_fe = _first_attr(
+        result,
+        [
+            "time_effects",
+            "has_time_effects",
+            "time_fe",
+            "period_effects",
+            "has_period_effects",
+        ],
+        None,
+    )
+    fixed_effects = _first_attr(
+        result,
+        [
+            "fixed_effects",
+            "has_fixed_effects",
+            "absorbed_effects",
+            "effects",
+            "fe",
+        ],
+        None,
+    )
+    clustered = _first_attr(
+        result,
+        [
+            "clustered",
+            "clustered_se",
+            "cluster_entity",
+            "cluster_time",
+            "clusters",
+        ],
+        None,
+    )
+
+    if _yes_no(entity_fe) is not None:
+        stats.setdefault("Entity FE", _yes_no(entity_fe))
+    if _yes_no(time_fe) is not None:
+        stats.setdefault("Time FE", _yes_no(time_fe))
+    if _yes_no(fixed_effects) is not None:
+        stats.setdefault("Fixed effects", _yes_no(fixed_effects))
+    if _yes_no(clustered) is not None:
+        stats.setdefault("Clustered SE", _yes_no(clustered))
+
     return RegressionModel(
         name=name,
         depvar=str(_first_attr(result, ["depvar", "dependent", "yname"], None) or "") or None,
