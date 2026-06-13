@@ -106,6 +106,22 @@ External software compatibility currently works through structured coefficient t
 
 ---
 
+## Supported input types
+
+`universal-output-hub` is designed as a generic output layer, not as a reporting layer for one estimator or one package only.
+
+It accepts and normalises common statistical and econometric result formats, including:
+
+- dictionaries with `params`, `std_errors`, `pvalues`, `statistics`, and `diagnostics`;
+- external coefficient tables from pandas DataFrames and supported table files;
+- `statsmodels`-like result objects;
+- `linearmodels`-like result objects;
+- `pyfixest`-like result objects;
+- generic Python result objects exposing coefficient, standard-error, p-value, statistics, metadata, or diagnostics attributes;
+- dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type.
+
+Compatibility with `systemgmmkit`-style System GMM results is treated as one high-priority compatibility case within this broader adapter contract.
+
 ## Installation
 
 Install from PyPI:
