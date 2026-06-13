@@ -62,7 +62,21 @@ Statistical and applied research workflows often produce outputs from many sourc
 
 ## Outreg-style reporting
 
-`universal-output-hub` supports `outreg2`-style model reporting in Python.
+`universal-output-hub` supports `outreg2`-style model reporting in Python through both the object-oriented `OutputHub` workflow and a one-line `outreg()` convenience API.
+
+```python
+from universal_output_hub import outreg
+
+outreg(
+    [model_1, model_2],
+    using="results.docx",
+    model_names=["OLS", "Fixed Effects"],
+    template="economics",
+    stats=["N", "R2", "Entity FE", "Time FE", "Clustered SE"],
+    notes=["Standard errors in parentheses."],
+    replace=True,
+)
+```
 
 That means it can:
 
@@ -75,36 +89,36 @@ That means it can:
 | Add significance stars?                                                               |                                               Yes |
 | Customize star thresholds?                                                            |                                               Yes |
 | Include diagnostics/statistics like N, R², Hansen p, Sargan p, AR tests, instruments? |                                               Yes |
+| Detect fixed-effect and clustered-SE rows from compatible model objects?              |                                               Yes |
 | Add notes under the table?                                                            |                                               Yes |
+| Use journal-style table presets?                                                      |                                               Yes |
 | Export to Excel?                                                                      |                                               Yes |
 | Export to LaTeX?                                                                      |                                               Yes |
 | Export to PDF?                                                                        |                                               Yes |
 | Export to Word/DOCX?                                                                  |                                               Yes |
 | Export to HTML, Markdown, CSV, JSON?                                                  |                                               Yes |
 | Accept `statsmodels` results?                                                         |                                               Yes |
+| Accept `linearmodels` and `pyfixest`-like results?                                    |                                               Yes |
 | Accept custom model dictionaries?                                                     |                                               Yes |
 | Accept Stata/R/MATLAB/SPSS/EViews outputs?                                            | Yes, if exported as structured coefficient tables |
 
-This package is **not** a full clone of Stata’s `outreg2`. It provides `outreg2`-style reporting for Python and external coefficient-table workflows.
-
----
+This package is **not** a full clone of Stata's `outreg2`. It provides `outreg2`-style reporting for Python and external coefficient-table workflows.
 
 ## Current limitations and roadmap
 
-| Capability                                                            |  Status |
-| --------------------------------------------------------------------- | ------: |
-| Native MATLAB `.mat` model-object parser                              | Planned |
-| Native Stata `.ster` parser                                           | Planned |
-| Native R `.rds` model-object parser                                   | Planned |
-| Exact Stata `outreg2` command compatibility                           | Planned |
-| Full `esttab`-level formatting grammar                                | Planned |
-| Multi-equation models with separate panels                            | Planned |
-| Automatic fixed-effect yes/no row detection from native model objects | Planned |
-| Journal templates                                                     | Planned |
+| Capability                                     |  Status |
+| ---------------------------------------------- | ------: |
+| Multi-equation models with separate panels     | Planned |
+| Native MATLAB `.mat` model-object parser       | Planned |
+| Native Stata `.ster` parser                    | Planned |
+| Native R `.rds` model-object parser            | Planned |
+| Exact Stata `outreg2` command compatibility    | Planned |
+| Full `esttab`-level formatting grammar         | Planned |
+| Advanced journal-specific submission templates | Planned |
 
 External software compatibility currently works through structured coefficient tables with at least a term column and a coefficient column. Standard errors, p-values, statistics, diagnostics, and notes can also be supplied.
 
----
+Automatic fixed-effect and clustered-standard-error row detection is supported for compatible native model objects that expose recognisable metadata. Lightweight table templates are available through the `template=` argument.
 
 ## Supported input types
 
@@ -112,23 +126,49 @@ External software compatibility currently works through structured coefficient t
 
 It accepts and normalises common statistical and econometric result formats, including:
 
-- dictionaries with `params`, `std_errors`, `pvalues`, `statistics`, and `diagnostics`;
-- external coefficient tables from pandas DataFrames and supported table files;
-- `statsmodels`-like result objects;
-- `linearmodels`-like result objects;
-- `pyfixest`-like result objects;
-- generic Python result objects exposing coefficient, standard-error, p-value, statistics, metadata, or diagnostics attributes;
-- dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type.
+* dictionaries with `params`, `std_errors`, `pvalues`, `statistics`, and `diagnostics`;
+* external coefficient tables from pandas DataFrames and supported table files;
+* `statsmodels`-like result objects;
+* `linearmodels`-like result objects;
+* `pyfixest`-like result objects;
+* generic Python result objects exposing coefficient, standard-error, p-value, statistics, metadata, or diagnostics attributes;
+* dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type;
+* compatible fixed-effects model objects exposing entity effects, time effects, fixed effects, clustered standard errors, or covariance-type metadata.
 
 Compatibility with `systemgmmkit`-style System GMM results is treated as one high-priority compatibility case within this broader adapter contract.
+
+## Table templates
+
+The package includes lightweight publication-style presets through the `template=` argument.
+
+```python
+hub.regression_table(template="economics")
+
+outreg(
+    models,
+    using="table.md",
+    template="journal",
+    replace=True,
+)
+```
+
+Currently supported templates include:
+
+| Template    | Purpose                                                              |
+| ----------- | -------------------------------------------------------------------- |
+| `economics` | Econometrics-oriented table with common FE, GMM, and diagnostic rows |
+| `journal`   | Compact publication-style table preset                               |
+| `stata`     | Stata/outreg-style ordering for common regression statistics         |
+
+Templates are intentionally lightweight. They control common statistics ordering, significance-star conventions, and table-note defaults. They are not full journal-specific submission templates.
 
 ## Installation
 
 Install from PyPI:
 
-``bash
+```bash
 python -m pip install universal-output-hub
-``
+```
 
 Install from GitHub:
 
