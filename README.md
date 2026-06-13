@@ -162,6 +162,29 @@ Currently supported templates include:
 
 Templates are intentionally lightweight. They control common statistics ordering, significance-star conventions, and table-note defaults. They are not full journal-specific submission templates.
 
+## Public API and module layout
+
+The recommended public API is imported from the package root:
+
+```python
+from universal_output_hub import OutputHub, outreg
+```
+
+Users should not import from internal implementation modules unless they are extending the package.
+
+The maintained internal layout for this release is:
+
+```text
+universal_output_hub/
+├── __init__.py
+├── adapters.py
+├── core.py
+├── formatters.py
+└── reports.py
+```
+
+For this release, the maintained implementation is organised through `core.py`, `adapters.py`, `formatters.py`, and `reports.py`. Users should import from the package root unless they are extending internal package functionality.
+
 ## Installation
 
 Install from PyPI:
@@ -694,5 +717,8 @@ This is an early-stage package. The public API is usable, but some internals may
 ## License
 
 MIT License.
+
+
+
 
 
