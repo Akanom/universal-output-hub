@@ -481,10 +481,35 @@ def _from_pyfixest_like(result: Any, *, name: str, diagnostics: Mapping[str, Any
 
 def _from_generic_object(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
     stats: dict[str, Any] = {}
-    for attr, label in [("nobs", "N"), ("rsquared", "R2"), ("r2", "R2"), ("aic", "AIC"), ("bic", "BIC")]:
+
+    stat_attrs = [
+        ("nobs", "N"),
+        ("n_obs", "N"),
+        ("n_groups", "Groups"),
+        ("groups", "Groups"),
+        ("n_instruments", "Instruments"),
+        ("instrument_count", "Instruments"),
+        ("rsquared", "R2"),
+        ("r2", "R2"),
+        ("aic", "AIC"),
+        ("bic", "BIC"),
+        ("hansen_p", "Hansen p"),
+        ("sargan_p", "Sargan p"),
+        ("diff_hansen_p", "Diff-Hansen p"),
+        ("ar1_p", "AR(1) p"),
+        ("ar2_p", "AR(2) p"),
+        ("ar1", "AR(1)"),
+        ("ar2", "AR(2)"),
+        ("backend", "Backend"),
+        ("covariance_type", "Covariance type"),
+        ("cov_type", "Covariance type"),
+    ]
+
+    for attr, label in stat_attrs:
         value = _first_attr(result, [attr], None)
         if value is not None:
             stats[label] = value
+
     return RegressionModel(
         name=name,
         depvar=str(_first_attr(result, ["depvar", "dependent", "yname"], None) or "") or None,
