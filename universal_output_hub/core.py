@@ -53,6 +53,83 @@ class FigureArtifact:
         return {"name": self.name, "path": self.path, "caption": self.caption, "metadata": self.metadata}
 
 
+
+_TABLE_TEMPLATES: dict[str, dict[str, Any]] = {
+    "economics": {
+        "stats_order": [
+            "N",
+            "Groups",
+            "Instruments",
+            "R2",
+            "Adj. R2",
+            "Within R2",
+            "Entity FE",
+            "Time FE",
+            "Fixed effects",
+            "Clustered SE",
+            "AR(1) p",
+            "AR(2) p",
+            "Hansen p",
+            "Sargan p",
+            "Diff-Hansen p",
+            "Backend",
+            "Covariance type",
+        ],
+        "star_levels": {"***": 0.01, "**": 0.05, "*": 0.1},
+        "star_note": "* p≤0.1, ** p≤0.05, *** p≤0.01",
+    },
+    "journal": {
+        "stats_order": [
+            "N",
+            "R2",
+            "Adj. R2",
+            "Entity FE",
+            "Time FE",
+            "Clustered SE",
+            "Instruments",
+            "Hansen p",
+            "AR(1) p",
+            "AR(2) p",
+        ],
+        "star_levels": {"***": 0.01, "**": 0.05, "*": 0.1},
+        "star_note": "* p≤0.1, ** p≤0.05, *** p≤0.01",
+    },
+    "stata": {
+        "stats_order": [
+            "N",
+            "R2",
+            "Adj. R2",
+            "Entity FE",
+            "Time FE",
+            "Fixed effects",
+            "Clustered SE",
+            "Instruments",
+            "Hansen p",
+            "Sargan p",
+            "AR(1) p",
+            "AR(2) p",
+        ],
+        "star_levels": {"***": 0.01, "**": 0.05, "*": 0.1},
+        "star_note": "* p≤0.1, ** p≤0.05, *** p≤0.01",
+    },
+}
+
+
+def _resolve_table_template(template: str | None) -> dict[str, Any]:
+    if template is None:
+        return {}
+
+    key = str(template).strip().lower()
+    if key in {"", "default", "none"}:
+        return {}
+
+    if key not in _TABLE_TEMPLATES:
+        valid = ", ".join(["default", *_TABLE_TEMPLATES])
+        raise ValueError(f"Unknown table template '{template}'. Valid templates: {valid}.")
+
+    return dict(_TABLE_TEMPLATES[key])
+
+
 class OutputHub:
     """Collect, standardise, and export research outputs.
 
@@ -282,6 +359,7 @@ class OutputHub:
         decimals: int = 3,
         stars: bool = True,
         star_levels: Mapping[str, float] | None = None,
+        template: str | None = None,
         se_below: bool = True,
         include_depvar: bool = False,
         add_star_note: bool = True,
@@ -292,6 +370,16 @@ class OutputHub:
             raise ValueError("No models have been added.")
 
         labels = dict(labels or {})
+
+        template_settings = _resolve_table_template(template)
+        if template_settings:
+            if stats_order is None:
+                stats_order = template_settings.get("stats_order")
+            if star_levels is None:
+                star_levels = template_settings.get("star_levels")
+            if star_note is None:
+                star_note = template_settings.get("star_note")
+
         terms: list[str] = []
         for model in self.models:
             for term in model.terms:
@@ -562,3 +650,191 @@ class OutputHub:
             "tables": table_paths,
             "figures": [Path(f.path) for f in self.figures],
         }
+
+
+def _normalise_models_input(models: Any) -> list[Any]:
+    """Return a list of model/result objects from a single object or sequence."""
+    if isinstance(models, (str, bytes, Mapping)):
+        return [models]
+    if isinstance(models, Sequence) and not isinstance(models, (pd.DataFrame, pd.Series)):
+        return list(models)
+    return [models]
+
+
+def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
+    """Write an outreg-style table based on file extension."""
+    suffix = path.suffix.lower()
+
+    if suffix == ".csv":
+        table.to_csv(path)
+        return
+
+    if suffix in {".xlsx", ".xls"}:
+        table.to_excel(path)
+        return
+
+    if suffix in {".md", ".markdown"}:
+        try:
+            content = table.to_markdown()
+        except Exception:
+            content = table.to_string()
+        path.write_text(content + "\n", encoding="utf-8")
+        return
+
+    if suffix in {".html", ".htm"}:
+        path.write_text(table.to_html(), encoding="utf-8")
+        return
+
+    if suffix in {".tex", ".latex"}:
+        path.write_text(table.to_latex(), encoding="utf-8")
+        return
+
+    if suffix == ".json":
+        path.write_text(table.to_json(orient="split", indent=2), encoding="utf-8")
+        return
+
+    if suffix == ".txt":
+        path.write_text(table.to_string() + "\n", encoding="utf-8")
+        return
+
+    if suffix == ".docx":
+        try:
+            from docx import Document
+        except ImportError as exc:
+            raise ImportError("DOCX export requires python-docx.") from exc
+
+        doc = Document()
+        doc.add_heading("Regression Results", level=1)
+
+        out = table.reset_index()
+        doc_table = doc.add_table(rows=1, cols=len(out.columns))
+        doc_table.style = "Table Grid"
+
+        header_cells = doc_table.rows[0].cells
+        for col_idx, col_name in enumerate(out.columns):
+            header_cells[col_idx].text = str(col_name)
+
+        for _, row in out.iterrows():
+            cells = doc_table.add_row().cells
+            for col_idx, value in enumerate(row):
+                cells[col_idx].text = "" if pd.isna(value) else str(value)
+
+        doc.save(path)
+        return
+
+    if suffix == ".pdf":
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import landscape, letter
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+        except ImportError as exc:
+            raise ImportError("PDF export requires reportlab.") from exc
+
+        out = table.reset_index()
+        data = [[str(col) for col in out.columns]]
+        for _, row in out.iterrows():
+            data.append(["" if pd.isna(value) else str(value) for value in row])
+
+        doc = SimpleDocTemplate(str(path), pagesize=landscape(letter))
+        pdf_table = Table(data, repeatRows=1)
+        pdf_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        doc.build([pdf_table])
+        return
+
+    raise ValueError(
+        f"Unsupported outreg output format '{suffix}'. "
+        "Use one of: .csv, .xlsx, .md, .html, .tex, .json, .txt, .docx, .pdf."
+    )
+
+
+def outreg(
+    models: Any,
+    using: str | Path,
+    *,
+    model_names: Sequence[str] | None = None,
+    title: str = "Regression Results",
+    template: str | None = None,
+    stats: Sequence[str] | None = None,
+    labels: Mapping[str, str] | None = None,
+    notes: Sequence[str] | None = None,
+    decimals: int = 3,
+    stars: bool = True,
+    star_levels: Mapping[str, float] | None = None,
+    replace: bool = False,
+    append: bool = False,
+    adapter: str = "auto",
+) -> Path:
+    """Export outreg2-style side-by-side model results in one call.
+
+    Parameters
+    ----------
+    models:
+        A single fitted result/model object or a sequence of result/model objects.
+    using:
+        Output path. The file extension determines the export format.
+    model_names:
+        Optional display names for the models.
+    title:
+        Report title used internally by OutputHub.
+    stats:
+        Optional statistics/diagnostics row order.
+    labels:
+        Optional coefficient label mapping.
+    notes:
+        Optional notes appended below the table.
+    decimals:
+        Number of decimal places.
+    stars:
+        Whether to add significance stars.
+    star_levels:
+        Optional significance-star thresholds.
+    replace:
+        If False, refuse to overwrite an existing file.
+    append:
+        Reserved for future Stata-like append workflows. Currently not supported.
+    adapter:
+        Adapter mode passed to OutputHub.add_model().
+    """
+    if append:
+        raise NotImplementedError("append=True is planned but not implemented in this release.")
+
+    output_path = Path(using)
+    if output_path.exists() and not replace:
+        raise FileExistsError(f"{output_path} already exists. Pass replace=True to overwrite it.")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model_list = _normalise_models_input(models)
+    names = list(model_names or [])
+
+    if names and len(names) != len(model_list):
+        raise ValueError("model_names must have the same length as models.")
+
+    hub = OutputHub(title)
+
+    for idx, model in enumerate(model_list):
+        model_name = names[idx] if names else None
+        hub.add_model(model, name=model_name, adapter=adapter)
+
+    table = hub.regression_table(
+        labels=labels,
+        stats_order=stats,
+        template=template,
+        decimals=decimals,
+        stars=stars,
+        star_levels=star_levels,
+        table_notes=notes,
+    )
+
+    _write_outreg_table(table, output_path)
+    return output_path
+
