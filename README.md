@@ -135,7 +135,24 @@ It accepts and normalises common statistical and econometric result formats, inc
 * dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type;
 * compatible fixed-effects model objects exposing entity effects, time effects, fixed effects, clustered standard errors, or covariance-type metadata.
 
-Compatibility with `systemgmmkit`-style System GMM results is treated as one high-priority compatibility case within this broader adapter contract.
+Compatibility with `systemgmmkit`-style dynamic-panel results is treated as one high-priority compatibility case within this broader adapter contract.
+
+## Dynamic-panel and GMM reporting compatibility
+
+`universal-output-hub` is designed to report dynamic-panel and GMM-style model outputs supplied by compatible estimators. This includes result objects or dictionaries exposing coefficients, standard errors, p-values, model statistics, diagnostics, metadata, and covariance information.
+
+For `systemgmmkit`-style workflows, the reporting layer is intended to support outputs from:
+
+* Difference GMM;
+* System GMM;
+* FOD Difference GMM;
+* one-step and two-step estimators;
+* Windmeijer-corrected and robust covariance labels where supplied by the estimator;
+* diagnostics such as observations, groups, instruments, Hansen/Sargan tests, AR tests, backend, transformation, and covariance type.
+
+`universal-output-hub` does not estimate GMM models and does not independently validate econometric diagnostics. It collects, normalises, formats, and exports results supplied by the estimator or by structured external result files.
+
+This keeps `systemgmmkit` as one important compatibility case while preserving the broader goal of supporting generic econometric and statistical result objects from Python and external software.
 
 ## Table templates
 
