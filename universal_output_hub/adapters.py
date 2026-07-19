@@ -479,6 +479,97 @@ def _from_pyfixest_like(result: Any, *, name: str, diagnostics: Mapping[str, Any
     )
 
 
+def _from_limiteddepkit(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    """Normalize limiteddepkit's shared fitted-result contract.
+
+    The adapter is intentionally duck typed so Universal Output Hub does not
+    require limiteddepkit as a runtime dependency. ``all_params`` is preferred
+    over ``params`` because multi-equation and ordinal models use it to expose
+    thresholds, ancillary parameters, and equation-prefixed coefficients in
+    covariance order.
+    """
+    params = _first_attr(result, ["all_params", "params"], None)
+    if params is None and hasattr(result, "params_outcome") and hasattr(result, "params_selection"):
+        outcome = _series(result.params_outcome, name="coef")
+        selection = _series(result.params_selection, name="coef")
+        outcome.index = [f"outcome:{term}" for term in outcome.index]
+        selection.index = [f"selection:{term}" for term in selection.index]
+        ancillary = pd.Series(
+            {
+                "log_sigma": _first_attr(result, ["log_sigma"], None),
+                "atanh_rho": _first_attr(result, ["atanh_rho"], None),
+            },
+            dtype="float64",
+        )
+        params = pd.concat([outcome, selection, ancillary]).rename("coef")
+
+    stats: dict[str, Any] = {}
+    for attr, label in [
+        ("nobs", "N"),
+        ("nobs_total", "N"),
+        ("nobs_observed", "Observed N"),
+        ("n_entities", "Groups"),
+        ("n_clusters", "Clusters"),
+        ("n_events", "Events"),
+        ("n_choice_sets", "Choice sets"),
+        ("n_alts", "Alternatives"),
+        ("aic", "AIC"),
+        ("bic", "BIC"),
+        ("loglike", "Log Likelihood"),
+        ("composite_loglike", "Log Likelihood"),
+        ("converged", "Converged"),
+        ("inference_valid", "Inference valid"),
+    ]:
+        value = _first_attr(result, [attr], None)
+        if value is not None:
+            stats.setdefault(label, value)
+
+    categories = _first_attr(result, ["categories"], None)
+    if categories is not None:
+        try:
+            stats["Categories"] = len(categories)
+        except TypeError:
+            pass
+
+    metadata: dict[str, Any] = {
+        "class": result.__class__.__name__,
+        "module": result.__class__.__module__,
+        "estimator": result.__class__.__name__.removesuffix("Result"),
+    }
+    for attr in ["backend", "covariance_type", "link", "quantile", "inference_valid"]:
+        value = _first_attr(result, [attr], None)
+        if value is not None:
+            metadata[attr] = value
+    if categories is not None:
+        try:
+            metadata["categories"] = [str(category) for category in categories]
+        except TypeError:
+            pass
+
+    extracted_diagnostics = dict(diagnostics or {})
+    for attr, label in [
+        ("score_norm", "Score norm"),
+        ("scaled_score_norm", "Scaled score norm"),
+        ("scaled_kkt_residual", "Scaled KKT residual"),
+        ("information_rank", "Information rank"),
+    ]:
+        value = _first_attr(result, [attr], None)
+        if value is not None:
+            extracted_diagnostics.setdefault(label, value)
+
+    return RegressionModel(
+        name=name,
+        depvar=str(_first_attr(result, ["depvar", "dependent", "yname"], None) or "") or None,
+        params=_series(params, name="coef"),
+        std_errors=_series(_first_attr(result, ["standard_errors", "bse", "se"], None), name="se"),
+        pvalues=_series(_first_attr(result, ["pvalues", "p_values", "pvalue"], None), name="pvalue"),
+        statistics=stats,
+        diagnostics=extracted_diagnostics,
+        metadata=metadata,
+        source="limiteddepkit",
+    )
+
+
 def _from_generic_object(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
     stats: dict[str, Any] = {}
 
@@ -628,4 +719,6 @@ def normalise_model(
         adapter == "auto" and ("pyfixest" in module or "fixest" in class_name)
     ):
         return _from_pyfixest_like(result, name=model_name, diagnostics=diagnostics)
+    if adapter == "limiteddepkit" or (adapter == "auto" and module.startswith("limiteddepkit")):
+        return _from_limiteddepkit(result, name=model_name, diagnostics=diagnostics)
     return _from_generic_object(result, name=model_name, diagnostics=diagnostics)

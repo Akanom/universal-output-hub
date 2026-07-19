@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 - 2026-07-19
+
+- Made significance and custom note rows span the full table width in Excel,
+  HTML, LaTeX, PDF, and DOCX regression-table exports.
+- Added automatic `limiteddepkit` result detection, complete-parameter export,
+  shared fit statistics, diagnostics, metadata, and sample-selection equation
+  normalization.
+
 ## 0.2.0
 
 - Added native DOCX report export.

@@ -19,13 +19,73 @@ def _display_frame(
     include_index: bool = True,
     index_name: str = "",
 ) -> pd.DataFrame:
+    attrs = dict(frame.attrs)
     output = frame.copy()
     if include_index:
         output = output.reset_index()
         first = output.columns[0]
         if first == "index" or first is None:
             output = output.rename(columns={first: index_name})
-    return output.fillna("").astype(str)
+    output = output.fillna("").astype(str)
+    output.attrs.update(attrs)
+    return output
+
+
+def _spanning_rows(frame: pd.DataFrame) -> dict[int, str]:
+    """Return zero-based data-row positions that should span all columns."""
+    return {
+        int(item["position"]): str(item["text"])
+        for item in frame.attrs.get("spanning_rows", [])
+        if "position" in item and "text" in item
+    }
+
+
+def _frame_to_html(frame: pd.DataFrame, *, include_index: bool = True, index_name: str = "") -> str:
+    display = _display_frame(frame, include_index=include_index, index_name=index_name)
+    spans = _spanning_rows(display)
+    parts = ['<table border="0" class="dataframe">', "  <thead>", '    <tr style="text-align: right;">']
+    parts.extend(f"      <th>{escape(str(column))}</th>" for column in display.columns)
+    parts.extend(["    </tr>", "  </thead>", "  <tbody>"])
+    for position, row in enumerate(display.itertuples(index=False, name=None)):
+        parts.append("    <tr>")
+        if position in spans:
+            parts.append(
+                f'      <td colspan="{len(display.columns)}" class="table-note">{escape(spans[position])}</td>'
+            )
+        else:
+            parts.extend(f"      <td>{escape(str(value))}</td>" for value in row)
+        parts.append("    </tr>")
+    parts.extend(["  </tbody>", "</table>"])
+    return "\n".join(parts)
+
+
+def _frame_to_latex(frame: pd.DataFrame, *, include_index: bool = True, index_name: str = "") -> str:
+    display = _display_frame(frame, include_index=include_index, index_name=index_name)
+    spans = _spanning_rows(display)
+    column_count = len(display.columns)
+    lines = [rf"\begin{{tabular}}{{{'l' + 'c' * (column_count - 1)}}}", r"\toprule"]
+    lines.append(" & ".join(_latex_escape(column) for column in display.columns) + r" \\")
+    lines.append(r"\midrule")
+    for position, row in enumerate(display.itertuples(index=False, name=None)):
+        if position in spans:
+            lines.append(rf"\multicolumn{{{column_count}}}{{l}}{{{_latex_escape(spans[position])}}} \\")
+        else:
+            lines.append(" & ".join(_latex_escape(value) for value in row) + r" \\")
+    lines.extend([r"\bottomrule", r"\end{tabular}"])
+    return "\n".join(lines)
+
+
+def _merge_excel_spanning_rows(writer: Any, sheet_name: str, frame: pd.DataFrame, *, include_index: bool) -> None:
+    spans = _spanning_rows(frame)
+    if not spans:
+        return
+    sheet = writer.sheets[sheet_name]
+    column_count = len(frame.columns) + (1 if include_index else 0)
+    for position, note in spans.items():
+        excel_row = position + 2  # one-based row plus header
+        sheet.merge_cells(start_row=excel_row, start_column=1, end_row=excel_row, end_column=column_count)
+        sheet.cell(excel_row, 1, note)
+        sheet.cell(excel_row, 1).alignment = __import__("openpyxl").styles.Alignment(wrap_text=True, vertical="top")
 
 
 def _iter_frame_rows(frame: pd.DataFrame) -> list[list[str]]:
@@ -73,18 +133,18 @@ def _make_pdf_table(frame: pd.DataFrame, styles: Any) -> Any:
     rows = _iter_frame_rows(frame)
     paragraph_rows = [[Paragraph(escape(str(cell)), styles["BodyText"]) for cell in row] for row in rows]
     table = Table(paragraph_rows, repeatRows=1, hAlign="LEFT")
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-            ]
-        )
-    )
+    commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+    ]
+    for position in _spanning_rows(frame):
+        commands.append(("SPAN", (0, position + 1), (-1, position + 1)))
+        commands.append(("ALIGN", (0, position + 1), (-1, position + 1), "LEFT"))
+    table.setStyle(TableStyle(commands))
     return table
 
 
@@ -139,13 +199,16 @@ def export_frame(
     if fmt == "csv":
         frame.to_csv(path, index=include_index)
     elif fmt in {"xlsx", "xls"}:
-        frame.to_excel(path, index=include_index, sheet_name=_safe_sheet_name(sheet_name))
+        safe_sheet = _safe_sheet_name(sheet_name)
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            frame.to_excel(writer, index=include_index, sheet_name=safe_sheet)
+            _merge_excel_spanning_rows(writer, safe_sheet, frame, include_index=include_index)
     elif fmt in {"md", "markdown"}:
         path.write_text(frame.to_markdown(index=include_index), encoding="utf-8")
     elif fmt in {"html", "htm"}:
-        path.write_text(frame.to_html(border=0, index=include_index), encoding="utf-8")
+        path.write_text(_frame_to_html(frame, include_index=include_index, index_name=index_name), encoding="utf-8")
     elif fmt in {"tex", "latex"}:
-        path.write_text(frame.to_latex(index=include_index, escape=False), encoding="utf-8")
+        path.write_text(_frame_to_latex(frame, include_index=include_index, index_name=index_name), encoding="utf-8")
     elif fmt == "json":
         output = frame.reset_index() if include_index else frame
         path.write_text(output.to_json(orient="records", indent=2), encoding="utf-8")
@@ -164,8 +227,13 @@ def _add_docx_table(document: Any, frame: pd.DataFrame) -> None:
     table.style = "Table Grid"
     for idx, value in enumerate(rows[0]):
         table.rows[0].cells[idx].text = value
-    for row in rows[1:]:
+    spans = _spanning_rows(frame)
+    for position, row in enumerate(rows[1:]):
         cells = table.add_row().cells
+        if position in spans:
+            merged = cells[0].merge(cells[-1])
+            merged.text = spans[position]
+            continue
         for idx, value in enumerate(row):
             cells[idx].text = value
 
@@ -317,7 +385,7 @@ def export_latex_report(
     if hub.models:
         parts.append(r"\section*{Regression / Model Results}")
         table = hub.regression_table(**dict(regression_kwargs or {}))
-        parts.append(table.to_latex(escape=False))
+        parts.append(_frame_to_latex(table, include_index=True, index_name="term"))
     if hub.tables:
         parts.append(r"\section*{Tables}")
         for artifact in hub.tables:
@@ -354,7 +422,9 @@ def export_excel_workbook(
     with pd.ExcelWriter(path, engine="openpyxl") as writer:
         if hub.models:
             sheet = _safe_sheet_name("regression_table", used_sheets)
-            hub.regression_table(**dict(regression_kwargs or {})).to_excel(writer, sheet_name=sheet)
+            regression = hub.regression_table(**dict(regression_kwargs or {}))
+            regression.to_excel(writer, sheet_name=sheet)
+            _merge_excel_spanning_rows(writer, sheet, regression, include_index=True)
             wrote_sheet = True
         for artifact in hub.tables:
             sheet = _safe_sheet_name(artifact.name, used_sheets)

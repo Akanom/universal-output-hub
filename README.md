@@ -134,8 +134,30 @@ It accepts and normalises common statistical and econometric result formats, inc
 * generic Python result objects exposing coefficient, standard-error, p-value, statistics, metadata, or diagnostics attributes;
 * dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type;
 * compatible fixed-effects model objects exposing entity effects, time effects, fixed effects, clustered standard errors, or covariance-type metadata.
+* `limiteddepkit` fitted results through automatic module detection or
+  `adapter="limiteddepkit"`, including binary, ordinal, fixed-effects and
+  dynamic ordinal, count, duration, censoring, multinomial, sequential,
+  conditional-choice, small-sample, and sample-selection families. Complete
+  multi-equation and ancillary parameter vectors are retained.
 
-Compatibility with `systemgmmkit`-style System GMM results is treated as one high-priority compatibility case within this broader adapter contract.
+Compatibility with `systemgmmkit`-style dynamic-panel results is treated as one high-priority compatibility case within this broader adapter contract.
+
+## Dynamic-panel and GMM reporting compatibility
+
+`universal-output-hub` is designed to report dynamic-panel and GMM-style model outputs supplied by compatible estimators. This includes result objects or dictionaries exposing coefficients, standard errors, p-values, model statistics, diagnostics, metadata, and covariance information.
+
+For `systemgmmkit`-style workflows, the reporting layer is intended to support outputs from:
+
+* Difference GMM;
+* System GMM;
+* FOD Difference GMM;
+* one-step and two-step estimators;
+* Windmeijer-corrected and robust covariance labels where supplied by the estimator;
+* diagnostics such as observations, groups, instruments, Hansen/Sargan tests, AR tests, backend, transformation, and covariance type.
+
+`universal-output-hub` does not estimate GMM models and does not independently validate econometric diagnostics. It collects, normalises, formats, and exports results supplied by the estimator or by structured external result files.
+
+This keeps `systemgmmkit` as one important compatibility case while preserving the broader goal of supporting generic econometric and statistical result objects from Python and external software.
 
 ## Table templates
 
@@ -404,6 +426,12 @@ Table notes are included in:
 * PDF reports;
 * LaTeX reports;
 * manifest files.
+
+In rich table formats (Excel, HTML, LaTeX, PDF, and DOCX), significance and
+custom note rows span the full table width. This keeps long notes from forcing
+one model column to become disproportionately wide. Plain-text formats such as
+CSV, JSON, Markdown, and TXT retain the rectangular DataFrame representation
+because those formats do not support merged cells.
 
 You can also pass notes directly when building a regression table:
 
