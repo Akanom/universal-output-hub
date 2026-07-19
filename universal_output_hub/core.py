@@ -53,13 +53,17 @@ class FigureArtifact:
         return {"name": self.name, "path": self.path, "caption": self.caption, "metadata": self.metadata}
 
 
-
 _TABLE_TEMPLATES: dict[str, dict[str, Any]] = {
     "economics": {
         "stats_order": [
             "N",
             "Groups",
             "Instruments",
+            "Clusters",
+            "Events",
+            "Choice sets",
+            "Alternatives",
+            "Categories",
             "R2",
             "Adj. R2",
             "Within R2",
@@ -67,6 +71,8 @@ _TABLE_TEMPLATES: dict[str, dict[str, Any]] = {
             "Time FE",
             "Fixed effects",
             "Clustered SE",
+            "Converged",
+            "Inference valid",
             "AR(1) p",
             "AR(2) p",
             "Hansen p",
@@ -419,8 +425,14 @@ class OutputHub:
 
         default_stats = [
             "N",
+            "Observed N",
             "Groups",
             "Instruments",
+            "Clusters",
+            "Events",
+            "Choice sets",
+            "Alternatives",
+            "Categories",
             "R2",
             "Adj. R2",
             "Within R2",
@@ -443,6 +455,8 @@ class OutputHub:
             "Time FE",
             "Fixed effects",
             "Clustered SE",
+            "Converged",
+            "Inference valid",
         ]
         stat_keys = list(stats_order or default_stats)
         present_stats = [key for key in stat_keys if any(m.stat(key) is not None for m in self.models)]
@@ -453,7 +467,23 @@ class OutputHub:
                 for model in self.models:
                     value = model.stat(key)
                     number = as_float(value)
-                    if key in {"N", "Instruments"} and number is not None:
+                    if isinstance(value, bool):
+                        stat_row.append("Yes" if value else "No")
+                    elif (
+                        key
+                        in {
+                            "N",
+                            "Observed N",
+                            "Groups",
+                            "Instruments",
+                            "Clusters",
+                            "Events",
+                            "Choice sets",
+                            "Alternatives",
+                            "Categories",
+                        }
+                        and number is not None
+                    ):
                         stat_row.append(str(int(round(number))))
                     elif number is not None:
                         stat_row.append(format_number(number, decimals))
@@ -482,7 +512,21 @@ class OutputHub:
         df = pd.DataFrame({"term": [r[0] for r in rows]})
         for idx, model in enumerate(self.models):
             df[model.name] = [r[1][idx] for r in rows]
-        return df.set_index("term")
+        result = df.set_index("term")
+
+        # A DataFrame cannot express merged cells itself. Preserve the row
+        # positions and complete note text so rich exporters can span the
+        # entire displayed table instead of widening one model column.
+        spanning_rows: list[dict[str, Any]] = []
+        for position, (label, values) in enumerate(rows):
+            if label in {"Significance", "Notes"} or (
+                not label and values and values[0] and spanning_rows and spanning_rows[-1]["kind"] == "note"
+            ):
+                kind = "significance" if label == "Significance" else "note"
+                prefix = "Significance: " if label == "Significance" else ("Notes: " if label == "Notes" else "")
+                spanning_rows.append({"position": position, "text": prefix + values[0], "kind": kind})
+        result.attrs["spanning_rows"] = spanning_rows
+        return result
 
     # ------------------------------------------------------------------
     # Exporters
@@ -555,6 +599,8 @@ class OutputHub:
         return path
 
     def export_html_report(self, output_dir: str | Path, *, regression_kwargs: Mapping[str, Any] | None = None) -> Path:
+        from .reports import _frame_to_html
+
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         parts = [
@@ -580,7 +626,7 @@ class OutputHub:
         if self.models:
             parts.append("<h2>Regression / Model Results</h2>")
             table = self.regression_table(**dict(regression_kwargs or {}))
-            parts.append(table.to_html(escape=False, border=0))
+            parts.append(_frame_to_html(table, include_index=True, index_name="term"))
         if self.tables:
             parts.append("<h2>Tables</h2>")
             for artifact in self.tables:
@@ -663,6 +709,15 @@ def _normalise_models_input(models: Any) -> list[Any]:
 
 def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
     """Write an outreg-style table based on file extension."""
+    from .reports import (
+        _add_docx_table,
+        _display_frame,
+        _frame_to_html,
+        _frame_to_latex,
+        _make_pdf_table,
+        _merge_excel_spanning_rows,
+    )
+
     suffix = path.suffix.lower()
 
     if suffix == ".csv":
@@ -670,7 +725,9 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         return
 
     if suffix in {".xlsx", ".xls"}:
-        table.to_excel(path)
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            table.to_excel(writer, sheet_name="regression_table")
+            _merge_excel_spanning_rows(writer, "regression_table", table, include_index=True)
         return
 
     if suffix in {".md", ".markdown"}:
@@ -682,11 +739,11 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         return
 
     if suffix in {".html", ".htm"}:
-        path.write_text(table.to_html(), encoding="utf-8")
+        path.write_text(_frame_to_html(table, include_index=True, index_name="term"), encoding="utf-8")
         return
 
     if suffix in {".tex", ".latex"}:
-        path.write_text(table.to_latex(), encoding="utf-8")
+        path.write_text(_frame_to_latex(table, include_index=True, index_name="term"), encoding="utf-8")
         return
 
     if suffix == ".json":
@@ -706,47 +763,21 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         doc = Document()
         doc.add_heading("Regression Results", level=1)
 
-        out = table.reset_index()
-        doc_table = doc.add_table(rows=1, cols=len(out.columns))
-        doc_table.style = "Table Grid"
-
-        header_cells = doc_table.rows[0].cells
-        for col_idx, col_name in enumerate(out.columns):
-            header_cells[col_idx].text = str(col_name)
-
-        for _, row in out.iterrows():
-            cells = doc_table.add_row().cells
-            for col_idx, value in enumerate(row):
-                cells[col_idx].text = "" if pd.isna(value) else str(value)
+        _add_docx_table(doc, _display_frame(table, include_index=True, index_name="term"))
 
         doc.save(path)
         return
 
     if suffix == ".pdf":
         try:
-            from reportlab.lib import colors
             from reportlab.lib.pagesizes import landscape, letter
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import SimpleDocTemplate
         except ImportError as exc:
             raise ImportError("PDF export requires reportlab.") from exc
 
-        out = table.reset_index()
-        data = [[str(col) for col in out.columns]]
-        for _, row in out.iterrows():
-            data.append(["" if pd.isna(value) else str(value) for value in row])
-
         doc = SimpleDocTemplate(str(path), pagesize=landscape(letter))
-        pdf_table = Table(data, repeatRows=1)
-        pdf_table.setStyle(
-            TableStyle(
-                [
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
+        pdf_table = _make_pdf_table(_display_frame(table, include_index=True, index_name="term"), getSampleStyleSheet())
         doc.build([pdf_table])
         return
 
@@ -837,4 +868,3 @@ def outreg(
 
     _write_outreg_table(table, output_path)
     return output_path
-

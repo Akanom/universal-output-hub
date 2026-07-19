@@ -134,6 +134,11 @@ It accepts and normalises common statistical and econometric result formats, inc
 * generic Python result objects exposing coefficient, standard-error, p-value, statistics, metadata, or diagnostics attributes;
 * dynamic-panel and GMM-style result objects exposing diagnostics such as observations, group count, instrument count, Hansen/Sargan tests, AR tests, backend, and covariance type;
 * compatible fixed-effects model objects exposing entity effects, time effects, fixed effects, clustered standard errors, or covariance-type metadata.
+* `limiteddepkit` fitted results through automatic module detection or
+  `adapter="limiteddepkit"`, including binary, ordinal, fixed-effects and
+  dynamic ordinal, count, duration, censoring, multinomial, sequential,
+  conditional-choice, small-sample, and sample-selection families. Complete
+  multi-equation and ancillary parameter vectors are retained.
 
 Compatibility with `systemgmmkit`-style dynamic-panel results is treated as one high-priority compatibility case within this broader adapter contract.
 
@@ -421,6 +426,12 @@ Table notes are included in:
 * PDF reports;
 * LaTeX reports;
 * manifest files.
+
+In rich table formats (Excel, HTML, LaTeX, PDF, and DOCX), significance and
+custom note rows span the full table width. This keeps long notes from forcing
+one model column to become disproportionately wide. Plain-text formats such as
+CSV, JSON, Markdown, and TXT retain the rectangular DataFrame representation
+because those formats do not support merged cells.
 
 You can also pass notes directly when building a regression table:
 

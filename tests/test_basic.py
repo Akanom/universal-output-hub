@@ -171,3 +171,39 @@ def test_table_notes_are_added_below_regression_table(tmp_path: Path) -> None:
     hub.add_table_note("Standard errors in parentheses.")
     table = hub.regression_table()
     assert "Notes" in table.index
+
+
+def test_table_notes_span_all_columns_in_rich_exports(tmp_path: Path) -> None:
+    from docx import Document
+    from openpyxl import load_workbook
+
+    hub = OutputHub("Spanning Notes")
+    for name in ("M1", "M2", "M3"):
+        hub.add_model(
+            {
+                "name": name,
+                "params": {"x": 1.0},
+                "std_errors": {"x": 0.1},
+                "pvalues": {"x": 0.01},
+            }
+        )
+    note = "Standard errors in parentheses and clustered by entity."
+    hub.add_table_note(note)
+
+    html_path = hub.export_regression_table(tmp_path / "table.html")
+    html = html_path.read_text(encoding="utf-8")
+    assert 'colspan="4" class="table-note">Notes: ' + note in html
+
+    latex_path = hub.export_regression_table(tmp_path / "table.tex")
+    latex = latex_path.read_text(encoding="utf-8")
+    assert rf"\multicolumn{{4}}{{l}}{{Notes: {note}}}" in latex
+
+    excel_path = hub.export_regression_table(tmp_path / "table.xlsx")
+    sheet = load_workbook(excel_path).active
+    note_cell = next(cell for cell in sheet["A"] if cell.value == f"Notes: {note}")
+    assert f"A{note_cell.row}:D{note_cell.row}" in {str(cell_range) for cell_range in sheet.merged_cells.ranges}
+
+    docx_path = hub.export_report(tmp_path / "report.docx")
+    document = Document(docx_path)
+    note_row = next(row for row in document.tables[0].rows if row.cells[0].text == f"Notes: {note}")
+    assert len({cell._tc for cell in note_row.cells}) == 1
