@@ -736,7 +736,7 @@ hub.export_bundle("outputs/run_001")
 
 ## Project status
 
-Current release: `0.2.0`
+Current stable release: [available from PyPI](https://pypi.org/project/universal-output-hub/).
 
 This is an early-stage package. The public API is usable, but some internals may still change as the package matures.
 

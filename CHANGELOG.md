@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Replaced the hard-coded README release number with the canonical PyPI link.
+- Upgraded `actions/checkout` to v7 and `actions/setup-python` to v6 for
+  Node.js 24-compatible GitHub Actions execution.
+
 ## 0.2.3 - 2026-07-19
 
 - Made significance and custom note rows span the full table width in Excel,
