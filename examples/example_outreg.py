@@ -45,5 +45,3 @@ outreg(
 )
 
 print("Wrote outputs/outreg_example.md")
-
-

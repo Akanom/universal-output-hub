@@ -90,5 +90,3 @@ def test_outreg_rejects_append_for_now(tmp_path: Path) -> None:
 
     with pytest.raises(NotImplementedError, match="append"):
         outreg(_model("OLS", 1.5), using=output, append=True)
-
-
