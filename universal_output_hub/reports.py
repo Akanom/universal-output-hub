@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from ._optional import require_optional
 from .formatters import safe_filename
 
 
@@ -156,13 +157,16 @@ def export_frame_pdf(
     include_index: bool = True,
     index_name: str = "",
 ) -> Path:
+    require_optional("reportlab", "pdf", "PDF export")
     try:
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
     except ImportError as exc:
-        raise ImportError("PDF export requires reportlab. Install with: pip install reportlab") from exc
+        raise ImportError(
+            "PDF export requires reportlab. Install it with: pip install 'universal-output-hub[pdf]'"
+        ) from exc
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +203,7 @@ def export_frame(
     if fmt == "csv":
         frame.to_csv(path, index=include_index)
     elif fmt in {"xlsx", "xls"}:
+        require_optional("openpyxl", "excel", "Excel export")
         safe_sheet = _safe_sheet_name(sheet_name)
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             frame.to_excel(writer, index=include_index, sheet_name=safe_sheet)
@@ -245,11 +250,14 @@ def export_docx_report(
     regression_kwargs: Mapping[str, Any] | None = None,
     include_metadata: bool = True,
 ) -> Path:
+    require_optional("docx", "documents", "DOCX export")
     try:
         from docx import Document
         from docx.shared import Inches
     except ImportError as exc:
-        raise ImportError("DOCX export requires python-docx. Install with: pip install python-docx") from exc
+        raise ImportError(
+            "DOCX export requires python-docx. Install it with: pip install 'universal-output-hub[documents]'"
+        ) from exc
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     document = Document()
@@ -294,13 +302,16 @@ def export_pdf_report(
     regression_kwargs: Mapping[str, Any] | None = None,
     include_metadata: bool = True,
 ) -> Path:
+    require_optional("reportlab", "pdf", "PDF export")
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer
     except ImportError as exc:
-        raise ImportError("PDF export requires reportlab. Install with: pip install reportlab") from exc
+        raise ImportError(
+            "PDF export requires reportlab. Install it with: pip install 'universal-output-hub[pdf]'"
+        ) from exc
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = SimpleDocTemplate(str(path), pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -415,6 +426,7 @@ def export_excel_workbook(
     regression_kwargs: Mapping[str, Any] | None = None,
     include_metadata: bool = True,
 ) -> Path:
+    require_optional("openpyxl", "excel", "Excel export")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     used_sheets: set[str] = set()

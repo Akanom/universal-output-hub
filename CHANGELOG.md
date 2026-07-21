@@ -18,6 +18,17 @@
 - Modernized the package license metadata to the SPDX form accepted by current
   packaging tools.
 
+## 0.2.4 - Release pending
+
+- Moved Excel, Parquet, Word, and PDF libraries behind documented optional
+  extras while preserving the pandas/NumPy core.
+- Added actionable missing-extra errors at every optional export/import path.
+- Bounded all direct and optional dependencies and added hash-verified
+  reproducible requirement sets without OneDrive-incompatible `.lock` files.
+- Added dependency auditing, distribution-content inspection, SBOM generation,
+  dependency-review gates, pinned GitHub Actions, trusted PyPI publishing, and
+  build-provenance attestations.
+
 ## 0.2.3 - 2026-07-19
 
 - Made significance and custom note rows span the full table width in Excel,

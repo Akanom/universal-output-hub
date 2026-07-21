@@ -215,6 +215,18 @@ Install from PyPI:
 python -m pip install universal-output-hub
 ```
 
+The core install supports pandas/NumPy workflows and text-based exports. Install
+only the file-format backends you need:
+
+```bash
+python -m pip install "universal-output-hub[excel]"     # .xlsx
+python -m pip install "universal-output-hub[parquet]"   # Parquet
+python -m pip install "universal-output-hub[documents]" # Word .docx
+python -m pip install "universal-output-hub[pdf]"       # PDF
+python -m pip install "universal-output-hub[reports]"   # Excel, Word, and PDF
+python -m pip install "universal-output-hub[all]"       # every maintained backend
+```
+
 Install from GitHub:
 
 ```bash

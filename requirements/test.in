@@ -1,0 +1,7 @@
+-r runtime.in
+openpyxl>=3.1,<4
+pyarrow>=15,<26
+pytest>=7.4,<10
+python-docx>=1.1,<2
+reportlab>=4,<6
+ruff>=0.4,<1

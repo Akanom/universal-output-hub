@@ -14,6 +14,7 @@ from typing import Any
 
 import pandas as pd
 
+from ._optional import require_optional
 from .adapters import RegressionModel, from_coefficient_table, normalise_model
 from .formatters import (
     as_float,
@@ -232,10 +233,12 @@ class OutputHub:
         elif suffix in {".tsv", ".txt"}:
             table = pd.read_csv(p, sep="\t")
         elif suffix in {".xlsx", ".xls"}:
+            require_optional("openpyxl", "excel", "Excel input")
             table = pd.read_excel(p, sheet_name=sheet_name)
         elif suffix == ".dta":
             table = pd.read_stata(p)
         elif suffix in {".parquet", ".pq"}:
+            require_optional("pyarrow", "parquet", "Parquet input")
             table = pd.read_parquet(p)
         else:
             raise ValueError(f"Unsupported model file format: {suffix}")
@@ -291,10 +294,12 @@ class OutputHub:
         elif suffix in {".tsv", ".txt"}:
             df = pd.read_csv(p, sep="\t")
         elif suffix in {".xlsx", ".xls"}:
+            require_optional("openpyxl", "excel", "Excel input")
             df = pd.read_excel(p, sheet_name=sheet_name)
         elif suffix == ".dta":
             df = pd.read_stata(p)
         elif suffix in {".parquet", ".pq"}:
+            require_optional("pyarrow", "parquet", "Parquet input")
             df = pd.read_parquet(p)
         else:
             raise ValueError(f"Unsupported table file format: {suffix}")
@@ -539,6 +544,7 @@ class OutputHub:
         if fmt == "csv":
             table.to_csv(path)
         elif fmt in {"xlsx", "xls"}:
+            require_optional("openpyxl", "excel", "Excel export")
             table.to_excel(path, sheet_name="regression_table")
         elif fmt in {"md", "markdown"}:
             path.write_text(table.to_markdown(), encoding="utf-8")
@@ -569,6 +575,7 @@ class OutputHub:
                 if fmt == "csv":
                     artifact.data.to_csv(p, index=True)
                 elif fmt in {"xlsx", "xls"}:
+                    require_optional("openpyxl", "excel", "Excel export")
                     artifact.data.to_excel(p, index=True, sheet_name=base[:31])
                 elif fmt in {"html", "htm"}:
                     p.write_text(artifact.data.to_html(border=0), encoding="utf-8")
@@ -725,6 +732,7 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         return
 
     if suffix in {".xlsx", ".xls"}:
+        require_optional("openpyxl", "excel", "Excel export")
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
             table.to_excel(writer, sheet_name="regression_table")
             _merge_excel_spanning_rows(writer, "regression_table", table, include_index=True)
@@ -755,10 +763,13 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         return
 
     if suffix == ".docx":
+        require_optional("docx", "documents", "DOCX export")
         try:
             from docx import Document
         except ImportError as exc:
-            raise ImportError("DOCX export requires python-docx.") from exc
+            raise ImportError(
+                "DOCX export requires python-docx. Install it with: pip install 'universal-output-hub[documents]'"
+            ) from exc
 
         doc = Document()
         doc.add_heading("Regression Results", level=1)
@@ -769,12 +780,15 @@ def _write_outreg_table(table: pd.DataFrame, path: Path) -> None:
         return
 
     if suffix == ".pdf":
+        require_optional("reportlab", "pdf", "PDF export")
         try:
             from reportlab.lib.pagesizes import landscape, letter
             from reportlab.lib.styles import getSampleStyleSheet
             from reportlab.platypus import SimpleDocTemplate
         except ImportError as exc:
-            raise ImportError("PDF export requires reportlab.") from exc
+            raise ImportError(
+                "PDF export requires reportlab. Install it with: pip install 'universal-output-hub[pdf]'"
+            ) from exc
 
         doc = SimpleDocTemplate(str(path), pagesize=landscape(letter))
         pdf_table = _make_pdf_table(_display_frame(table, include_index=True, index_name="term"), getSampleStyleSheet())

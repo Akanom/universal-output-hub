@@ -1,18 +1,20 @@
-# universal-output-hub v0.2.3
+# universal-output-hub v0.2.4
 
-Patch release improving cross-package model compatibility and publication-table formatting.
+Security-focused patch release with a smaller core install and reproducible
+dependency and distribution verification.
 
 ## Changes
 
-- Add automatic support for inferential `limiteddepkit` fitted results, including
-  complete multi-equation and ancillary parameter vectors.
-- Normalize `SampleSelectionResult` outcome, selection, scale, and correlation
-  parameters into one aligned regression-table model.
-- Export shared `limiteddepkit` fit statistics, diagnostics, and metadata.
-- Merge significance and custom-note rows across the full table width in Excel,
-  HTML, LaTeX, PDF, and DOCX outputs.
-- Keep CSV, JSON, Markdown, and TXT output rectangular for format compatibility.
+- Keep the core runtime limited to pandas and NumPy.
+- Provide `excel`, `parquet`, `documents`, `pdf`, `reports`, and `all` extras.
+- Report the exact installation extra when an optional backend is missing.
+- Bound dependencies and provide hash-verified requirement sets.
+- Audit dependencies, inspect wheel/sdist contents, generate an SBOM, pin CI
+  actions by commit, attest provenance, and publish through trusted PyPI OIDC.
 
 ## Installation
 
-python -m pip install universal-output-hub==0.2.3
+python -m pip install universal-output-hub==0.2.4
+
+# Install every maintained file-format backend
+python -m pip install "universal-output-hub[all]==0.2.4"
