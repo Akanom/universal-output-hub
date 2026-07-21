@@ -34,8 +34,12 @@ python -m pip install --upgrade pip setuptools wheel
 Install the package in editable development mode:
 
 ```bash
-python -m pip install -e ".[dev,examples]"
+python -m pip install -e ".[dev,examples,integration]"
 ```
+
+The `integration` extra installs the statistical packages used by the CI
+compatibility suite: `statsmodels`, `linearmodels`, `pyfixest`, and
+`scikit-learn`. These packages remain optional for normal library use.
 
 ## 2. Smoke test
 
@@ -116,7 +120,7 @@ Editable install from a cloned repository:
 ```bash
 git clone https://github.com/Akanom/universal-output-hub.git
 cd universal-output-hub
-python -m pip install -e ".[dev,examples]"
+python -m pip install -e ".[dev,examples,integration]"
 ```
 
 ## 8. One-command push scripts

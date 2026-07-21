@@ -5,6 +5,18 @@
 - Replaced the hard-coded README release number with the canonical PyPI link.
 - Upgraded `actions/checkout` to v7 and `actions/setup-python` to v6 for
   Node.js 24-compatible GitHub Actions execution.
+- Added adapters for lifelines, ARCH, DoubleML, finite-dimensional EconML
+  results, ArviZ/PyMC/Bambi posterior results, and coefficient-bearing
+  scikit-learn estimators.
+- Added stable multi-equation parameter flattening, broader result aliases,
+  summary-table normalization, and a public process-local custom adapter
+  registry.
+- Added real-package compatibility tests for statsmodels, linearmodels,
+  pyfixest, and scikit-learn, plus CI installation through the new
+  `integration` extra.
+- Documented inference semantics and unsupported prediction-only result types.
+- Modernized the package license metadata to the SPDX form accepted by current
+  packaging tools.
 
 ## 0.2.3 - 2026-07-19
 

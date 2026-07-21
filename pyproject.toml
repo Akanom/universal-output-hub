@@ -9,13 +9,12 @@ description = "Collect model outputs, tables, diagnostics, and graphs into repro
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "Oluwajuwon Akanbi"}]
-license = {text = "MIT"}
+license = "MIT"
 keywords = ["regression", "econometrics", "reporting", "stata", "outreg2", "latex", "research"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -37,6 +36,7 @@ dependencies = [
 [project.optional-dependencies]
 examples = ["matplotlib>=3.7", "statsmodels>=0.14", "numpy>=1.24"]
 dev = ["pytest>=7.4", "ruff>=0.4"]
+integration = ["statsmodels>=0.14", "linearmodels>=7.0", "pyfixest>=0.30", "scikit-learn>=1.4"]
 
 [tool.setuptools.packages.find]
 where = ["."]

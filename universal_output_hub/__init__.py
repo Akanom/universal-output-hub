@@ -3,7 +3,14 @@
 Generic statistical and econometric output/reporting utilities.
 """
 
-from .adapters import RegressionModel, from_coefficient_table, normalise_model
+from .adapters import (
+    RegressionModel,
+    from_coefficient_table,
+    normalise_model,
+    register_model_adapter,
+    registered_model_adapters,
+    unregister_model_adapter,
+)
 from .core import FigureArtifact, OutputHub, TableArtifact, outreg
 from .reports import attach_output_methods, attach_report_methods
 
@@ -20,6 +27,7 @@ __all__ = [
     "from_coefficient_table",
     "normalise_model",
     "outreg",
+    "register_model_adapter",
+    "registered_model_adapters",
+    "unregister_model_adapter",
 ]
-
-

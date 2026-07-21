@@ -224,7 +224,7 @@ python -m pip install git+https://github.com/Akanom/universal-output-hub.git
 Development installation:
 
 ```bash
-python -m pip install -e ".[dev,examples]"
+python -m pip install -e ".[dev,examples,integration]"
 pytest -q
 ```
 
@@ -237,7 +237,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e ".[dev,examples]"
+python -m pip install -e ".[dev,examples,integration]"
 pytest -q
 ```
 
@@ -583,6 +583,73 @@ hub.export_bundle("outputs/python_models")
 ```
 
 The package extracts common model information such as coefficients, standard errors, p-values, N, R², AIC, BIC, log likelihood, and related statistics when available.
+
+### Python statistical-package compatibility
+
+The automatic adapter recognises these result families. Optional packages are
+not runtime dependencies; install only the packages used by your analysis.
+
+| Package or result family | Integration | Inference handling |
+| ------------------------ | ----------- | ------------------ |
+| `statsmodels` | Native result adapter, including DataFrame-valued multi-equation parameters | Coefficients, standard errors, p-values, and common fit statistics |
+| `linearmodels` | Native panel/IV-style result adapter | Coefficients, standard errors, p-values, panel R² measures, and F statistics |
+| `pyfixest` | Native duck-typed adapter and tidy-table fallback | Coefficients, standard errors, p-values, and available fit statistics |
+| `limiteddepkit` | Native shared-result adapter | Complete parameter vector, inference, fit statistics, and diagnostics |
+| `lifelines` | Summary-table adapter | Coefficients, standard errors, p-values, N, AIC, and log likelihood |
+| `arch` | Native result adapter | Parameters, standard errors, p-values, and common fit statistics |
+| `DoubleML` | Treatment-effect result adapter | Treatment coefficients, standard errors, and p-values |
+| `EconML` | Finite-dimensional coefficient adapter | Inference is included only when the estimator exposes `coef__inference()` |
+| ArviZ / PyMC / Bambi `InferenceData` | ArviZ posterior-summary adapter | Posterior means and SDs; credible intervals are metadata; p-values are not fabricated |
+| scikit-learn linear models | Coefficient adapter, including multiclass matrices | Coefficients and intercepts only; scikit-learn does not provide inferential SEs/p-values |
+| Custom estimators | Mapping, generic object, summary-table, or registered adapter | Exactly the inference fields supplied by the estimator |
+
+Prediction-only estimators, distribution objects, and effect functions without a
+finite coefficient vector should be exported as ordinary tables with
+`hub.add_table(...)`. Universal Output Hub reports estimator output; it does not
+derive missing uncertainty estimates or convert predictive models into
+inferential models.
+
+Install the packages exercised by the CI integration matrix with:
+
+```bash
+python -m pip install -e ".[integration]"
+```
+
+The integration extra currently installs `statsmodels`, `linearmodels`,
+`pyfixest`, and `scikit-learn`. Contract tests cover the other optional result
+families without making those large ecosystems mandatory dependencies.
+
+### Registering a custom model adapter
+
+Use the process-local registry when a package does not expose one of the common
+result contracts:
+
+```python
+import pandas as pd
+
+from universal_output_hub import RegressionModel, register_model_adapter
+
+
+def convert(result, name, diagnostics):
+    return RegressionModel(
+        name=name,
+        params=pd.Series(result.estimates, name="coef"),
+        diagnostics=dict(diagnostics or {}),
+        source="my-package",
+    )
+
+
+register_model_adapter(
+    "my-package",
+    predicate=lambda result: result.__class__.__module__.startswith("my_package"),
+    converter=convert,
+)
+```
+
+Pass `adapter="my-package"` for explicit selection, or leave `adapter="auto"`
+to use the predicate. Registration never imports third-party plugins
+automatically, so applications retain control over code execution and adapter
+precedence. Use `unregister_model_adapter("my-package")` to remove it.
 
 ---
 

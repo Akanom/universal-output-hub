@@ -7,11 +7,12 @@ plain dictionaries, and coefficient tables exported from Stata/R/SPSS/EViews/etc
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from .formatters import normalise_label
@@ -63,6 +64,47 @@ class RegressionModel:
         }
 
 
+AdapterPredicate = Callable[[Any], bool]
+AdapterConverter = Callable[[Any, str, Mapping[str, Any] | None], RegressionModel]
+_CUSTOM_ADAPTERS: dict[str, tuple[AdapterPredicate, AdapterConverter]] = {}
+
+
+def register_model_adapter(
+    name: str,
+    predicate: AdapterPredicate,
+    converter: AdapterConverter,
+    *,
+    replace: bool = False,
+) -> None:
+    """Register a custom result adapter used by :func:`normalise_model`.
+
+    The converter receives ``(result, model_name, diagnostics)`` and must
+    return a :class:`RegressionModel`. Registration is process-local and does
+    not import or execute third-party plugins automatically.
+    """
+    key = str(name).strip().lower()
+    if not key or key in {"auto", "generic", "generic-object"}:
+        raise ValueError("Adapter name must be non-empty and cannot be a reserved adapter name.")
+    if not callable(predicate) or not callable(converter):
+        raise TypeError("predicate and converter must be callable.")
+    if key in _CUSTOM_ADAPTERS and not replace:
+        raise ValueError(f"Adapter '{key}' is already registered. Pass replace=True to replace it.")
+    _CUSTOM_ADAPTERS[key] = (predicate, converter)
+
+
+def unregister_model_adapter(name: str) -> None:
+    """Remove a previously registered custom adapter."""
+    key = str(name).strip().lower()
+    if key not in _CUSTOM_ADAPTERS:
+        raise KeyError(f"Adapter '{key}' is not registered.")
+    del _CUSTOM_ADAPTERS[key]
+
+
+def registered_model_adapters() -> tuple[str, ...]:
+    """Return registered custom adapter names in matching order."""
+    return tuple(_CUSTOM_ADAPTERS)
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -103,6 +145,25 @@ def _first_attr(obj: Any, names: Sequence[str], default: Any = None) -> Any:
     return default
 
 
+def _first_mapping_value(mapping: Mapping[str, Any], names: Sequence[str], default: Any = None) -> Any:
+    """Return the first present, non-None mapping value without truth testing it."""
+    for name in names:
+        if name in mapping and mapping[name] is not None:
+            return mapping[name]
+    return default
+
+
+def _flatten_frame(value: pd.DataFrame, *, name: str) -> pd.Series:
+    """Flatten equation/model columns into stable ``column: term`` labels."""
+    labels: list[str] = []
+    values: list[Any] = []
+    for column in value.columns:
+        for term in value.index:
+            labels.append(f"{column}: {term}")
+            values.append(value.loc[term, column])
+    return pd.Series(values, index=labels, name=name)
+
+
 def _series(value: Any, *, name: str) -> pd.Series:
     if value is None:
         return pd.Series(dtype="float64", name=name)
@@ -111,9 +172,15 @@ def _series(value: Any, *, name: str) -> pd.Series:
         out.name = name
         out.index = out.index.map(str)
         return out
+    if isinstance(value, pd.DataFrame):
+        return _flatten_frame(value, name=name)
     if isinstance(value, Mapping):
         return pd.Series(dict(value), name=name)
     try:
+        array = np.asarray(value)
+        if array.ndim > 1:
+            labels = ["x[" + ",".join(map(str, index)) + "]" for index in np.ndindex(array.shape)]
+            return pd.Series(array.ravel(), index=labels, name=name)
         out = pd.Series(value, name=name)
         if isinstance(out.index, pd.RangeIndex):
             out.index = [f"x{i}" for i in range(len(out))]
@@ -332,9 +399,12 @@ def _from_mapping(
     diagnostics: Mapping[str, Any] | None = None,
 ) -> RegressionModel:
     model_name = normalise_label(name or result.get("name") or "Model")
-    params = result.get("params") or result.get("coef") or result.get("coefs") or result.get("coefficients")
-    se = result.get("std_errors") or result.get("standard_errors") or result.get("bse") or result.get("se")
-    pvalues = result.get("pvalues") or result.get("p_values") or result.get("pvalue")
+    params = _first_mapping_value(result, ["params", "params_", "coef", "coef_", "coefs", "coefficients"])
+    se = _first_mapping_value(
+        result,
+        ["std_errors", "standard_errors", "standard_errors_", "bse", "se", "std_err", "stderr"],
+    )
+    pvalues = _first_mapping_value(result, ["pvalues", "p_values", "pvalue", "p_value", "pval"])
 
     stats = dict(result.get("statistics") or result.get("stats") or {})
     diags = dict(result.get("diagnostics") or {})
@@ -570,6 +640,232 @@ def _from_limiteddepkit(result: Any, *, name: str, diagnostics: Mapping[str, Any
     )
 
 
+def _normalised_columns(table: pd.DataFrame) -> dict[str, Any]:
+    return {_compact_key(column): column for column in table.columns}
+
+
+def _from_summary_table(
+    table: pd.DataFrame,
+    *,
+    name: str,
+    source: str,
+    diagnostics: Mapping[str, Any] | None = None,
+    depvar: str | None = None,
+    statistics: Mapping[str, Any] | None = None,
+    metadata: Mapping[str, Any] | None = None,
+) -> RegressionModel:
+    """Normalize common tidy/summary-table column conventions."""
+    columns = _normalised_columns(table)
+    coef_col = next(
+        (columns[key] for key in ["coef", "coefficient", "estimate", "mean"] if key in columns),
+        None,
+    )
+    if coef_col is None:
+        raise ValueError(f"{source} summary table has no coefficient/estimate column.")
+    se_col = next(
+        (columns[key] for key in ["secoef", "stderr", "standarderror", "stddev", "sd", "se"] if key in columns),
+        None,
+    )
+    p_col = next(
+        (columns[key] for key in ["p", "pvalue", "pval", "probt", "prt", "prz"] if key in columns),
+        None,
+    )
+    return RegressionModel(
+        name=name,
+        depvar=depvar,
+        params=_series(table[coef_col], name="coef"),
+        std_errors=_series(table[se_col], name="se") if se_col is not None else pd.Series(dtype="float64"),
+        pvalues=_series(table[p_col], name="pvalue") if p_col is not None else pd.Series(dtype="float64"),
+        statistics=dict(statistics or {}),
+        diagnostics=dict(diagnostics or {}),
+        metadata=dict(metadata or {}),
+        source=source,
+    )
+
+
+def _from_lifelines(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    summary = _first_attr(result, ["summary"], None)
+    if not isinstance(summary, pd.DataFrame):
+        raise TypeError("lifelines result must expose a pandas summary table.")
+    stats: dict[str, Any] = {}
+    for attr, label in [
+        ("_n_examples", "N"),
+        ("AIC_", "AIC"),
+        ("AIC_partial_", "AIC"),
+        ("log_likelihood_", "Log Likelihood"),
+    ]:
+        value = _first_attr(result, [attr], None)
+        if value is not None:
+            stats.setdefault(label, value)
+    return _from_summary_table(
+        summary,
+        name=name,
+        source="lifelines",
+        diagnostics=diagnostics,
+        statistics=stats,
+        metadata={"class": result.__class__.__name__, "module": result.__class__.__module__},
+    )
+
+
+def _from_arch(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    stats: dict[str, Any] = {}
+    for attr, label in [
+        ("nobs", "N"),
+        ("aic", "AIC"),
+        ("bic", "BIC"),
+        ("loglikelihood", "Log Likelihood"),
+    ]:
+        value = _first_attr(result, [attr], None)
+        if value is not None:
+            stats[label] = value
+    return RegressionModel(
+        name=name,
+        params=_series(_first_attr(result, ["params"], None), name="coef"),
+        std_errors=_series(_first_attr(result, ["std_err", "std_errors"], None), name="se"),
+        pvalues=_series(_first_attr(result, ["pvalues"], None), name="pvalue"),
+        statistics=stats,
+        diagnostics=dict(diagnostics or {}),
+        metadata={"class": result.__class__.__name__, "module": result.__class__.__module__},
+        source="arch",
+    )
+
+
+def _from_doubleml(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    params = _first_attr(result, ["coef"], None)
+    se = _first_attr(result, ["se"], None)
+    pvalues = _first_attr(result, ["pval", "pvalues"], None)
+    treatment_names = _first_attr(result, ["treatment_names", "d_cols"], None)
+    if treatment_names is not None and not isinstance(params, (pd.Series, pd.DataFrame, Mapping)):
+        names = [str(item) for item in treatment_names]
+        values = np.asarray(params).reshape(-1)
+        if len(names) == len(values):
+            params = pd.Series(values, index=names)
+            se = pd.Series(np.asarray(se).reshape(-1), index=names) if se is not None else None
+            pvalues = pd.Series(np.asarray(pvalues).reshape(-1), index=names) if pvalues is not None else None
+    stats = {"N": value} if (value := _first_attr(result, ["n_obs", "nobs"], None)) is not None else {}
+    return RegressionModel(
+        name=name,
+        params=_series(params, name="coef"),
+        std_errors=_series(se, name="se"),
+        pvalues=_series(pvalues, name="pvalue"),
+        statistics=stats,
+        diagnostics=dict(diagnostics or {}),
+        metadata={"class": result.__class__.__name__, "module": result.__class__.__module__},
+        source="doubleml",
+    )
+
+
+def _coefficient_names(result: Any, count: int) -> list[str]:
+    names = _first_attr(result, ["feature_names_in_", "feature_names", "coef_names"], None)
+    if names is not None:
+        flattened = [str(item) for item in np.asarray(names).reshape(-1)]
+        if len(flattened) == count:
+            return flattened
+    return [f"x{i}" for i in range(count)]
+
+
+def _from_sklearn_like(
+    result: Any,
+    *,
+    name: str,
+    diagnostics: Mapping[str, Any] | None = None,
+    source: str = "sklearn",
+) -> RegressionModel:
+    coefficients = _first_attr(result, ["coef_", "coef"], None)
+    if coefficients is None:
+        raise TypeError(
+            f"{source} estimator does not expose coefficients. "
+            "Export predictions or metrics with add_table(...) instead."
+        )
+    array = np.asarray(coefficients)
+    feature_count = array.shape[-1] if array.ndim else 1
+    features = _coefficient_names(result, feature_count)
+    classes = _first_attr(result, ["classes_"], None)
+    if array.ndim <= 1:
+        params = pd.Series(array.reshape(-1), index=features)
+    else:
+        equation_names = (
+            [str(value) for value in classes] if classes is not None and len(classes) == array.shape[0] else None
+        )
+        equation_names = equation_names or [f"equation_{idx}" for idx in range(array.shape[0])]
+        params = _flatten_frame(pd.DataFrame(array, index=equation_names, columns=features).T, name="coef")
+    intercept = _first_attr(result, ["intercept_", "intercept"], None)
+    if intercept is not None:
+        intercept_values = np.asarray(intercept).reshape(-1)
+        if len(intercept_values) == 1:
+            params = pd.concat([pd.Series({"Intercept": intercept_values[0]}), params])
+        elif array.ndim > 1 and len(intercept_values) == array.shape[0]:
+            labels = [f"{equation}: Intercept" for equation in equation_names]
+            params = pd.concat([pd.Series(intercept_values, index=labels), params])
+    metadata = {
+        "class": result.__class__.__name__,
+        "module": result.__class__.__module__,
+        "inference_available": False,
+        "warning": "Estimator exposes coefficients but not inferential standard errors or p-values.",
+    }
+    return RegressionModel(
+        name=name,
+        params=_series(params, name="coef"),
+        statistics={},
+        diagnostics=dict(diagnostics or {}),
+        metadata=metadata,
+        source=source,
+    )
+
+
+def _from_arviz(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    try:
+        import arviz as az
+    except ImportError as exc:
+        raise ImportError("ArviZ is required to normalize Bayesian InferenceData results.") from exc
+    summary = az.summary(result, kind="stats")
+    if not isinstance(summary, pd.DataFrame) or "mean" not in summary.columns:
+        raise ValueError("ArviZ summary did not contain posterior means.")
+    credible_columns = [column for column in summary.columns if str(column).startswith("hdi_")]
+    metadata: dict[str, Any] = {
+        "class": result.__class__.__name__,
+        "module": result.__class__.__module__,
+        "inference": "posterior",
+        "pvalues_available": False,
+    }
+    if credible_columns:
+        metadata["credible_intervals"] = summary[credible_columns].to_dict(orient="index")
+    return _from_summary_table(
+        summary,
+        name=name,
+        source="arviz",
+        diagnostics=diagnostics,
+        metadata=metadata,
+    )
+
+
+def _from_econml(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
+    coefficients = _first_attr(result, ["coef_"], None)
+    if coefficients is None:
+        raise TypeError(
+            "EconML estimator does not expose a finite-dimensional coef_. "
+            "Export effect estimates and intervals with add_table(...) instead."
+        )
+    inference = _first_attr(result, ["coef__inference"], None)
+    se = _first_attr(inference, ["stderr", "stderr_"], None) if inference is not None else None
+    pvalues = _first_attr(inference, ["pvalue", "pvalues"], None) if inference is not None else None
+    params = _series(coefficients, name="coef")
+    metadata = {
+        "class": result.__class__.__name__,
+        "module": result.__class__.__module__,
+        "inference_available": inference is not None,
+    }
+    return RegressionModel(
+        name=name,
+        params=params,
+        std_errors=_series(se, name="se"),
+        pvalues=_series(pvalues, name="pvalue"),
+        diagnostics=dict(diagnostics or {}),
+        metadata=metadata,
+        source="econml",
+    )
+
+
 def _from_generic_object(result: Any, *, name: str, diagnostics: Mapping[str, Any] | None = None) -> RegressionModel:
     stats: dict[str, Any] = {}
 
@@ -675,12 +971,33 @@ def _from_generic_object(result: Any, *, name: str, diagnostics: Mapping[str, An
     if _yes_no(clustered) is not None:
         stats.setdefault("Clustered SE", _yes_no(clustered))
 
+    params = _first_attr(result, ["params", "params_", "coef", "coef_", "coefs", "coefficients"], None)
+    se = _first_attr(
+        result,
+        ["bse", "std_errors", "standard_errors", "standard_errors_", "se", "std_err", "stderr"],
+        None,
+    )
+    pvalues = _first_attr(result, ["pvalues", "p_values", "pvalue", "p_value", "pval"], None)
+    summary = _first_attr(result, ["summary_frame", "tidy", "summary"], None)
+    if params is None and isinstance(summary, pd.DataFrame):
+        try:
+            return _from_summary_table(
+                summary,
+                name=name,
+                source="generic-summary",
+                diagnostics=diagnostics,
+                statistics=stats,
+                metadata={"class": result.__class__.__name__, "module": result.__class__.__module__},
+            )
+        except ValueError:
+            pass
+
     return RegressionModel(
         name=name,
         depvar=str(_first_attr(result, ["depvar", "dependent", "yname"], None) or "") or None,
-        params=_series(_first_attr(result, ["params", "coef", "coefs", "coefficients"], None), name="coef"),
-        std_errors=_series(_first_attr(result, ["bse", "std_errors", "standard_errors", "se"], None), name="se"),
-        pvalues=_series(_first_attr(result, ["pvalues", "p_values", "pvalue"], None), name="pvalue"),
+        params=_series(params, name="coef"),
+        std_errors=_series(se, name="se"),
+        pvalues=_series(pvalues, name="pvalue"),
         statistics=stats,
         diagnostics=dict(diagnostics or {}),
         metadata={"class": result.__class__.__name__, "module": result.__class__.__module__},
@@ -711,6 +1028,17 @@ def normalise_model(
     module = result.__class__.__module__.lower()
     class_name = result.__class__.__name__.lower()
 
+    if adapter in _CUSTOM_ADAPTERS:
+        return _CUSTOM_ADAPTERS[adapter][1](result, model_name, diagnostics)
+    if adapter == "auto":
+        for _, (predicate, converter) in _CUSTOM_ADAPTERS.items():
+            try:
+                matches = bool(predicate(result))
+            except Exception:
+                matches = False
+            if matches:
+                return converter(result, model_name, diagnostics)
+
     if adapter == "statsmodels" or (adapter == "auto" and "statsmodels" in module):
         return _from_statsmodels(result, name=model_name, diagnostics=diagnostics)
     if adapter == "linearmodels" or (adapter == "auto" and "linearmodels" in module):
@@ -721,4 +1049,35 @@ def normalise_model(
         return _from_pyfixest_like(result, name=model_name, diagnostics=diagnostics)
     if adapter == "limiteddepkit" or (adapter == "auto" and module.startswith("limiteddepkit")):
         return _from_limiteddepkit(result, name=model_name, diagnostics=diagnostics)
+    if adapter == "lifelines" or (adapter == "auto" and module.startswith("lifelines")):
+        return _from_lifelines(result, name=model_name, diagnostics=diagnostics)
+    if adapter == "arch" or (adapter == "auto" and module.startswith("arch")):
+        return _from_arch(result, name=model_name, diagnostics=diagnostics)
+    if adapter == "doubleml" or (adapter == "auto" and module.startswith("doubleml")):
+        return _from_doubleml(result, name=model_name, diagnostics=diagnostics)
+    if adapter in {"arviz", "bayesian"} or (
+        adapter == "auto" and (module.startswith("arviz") or class_name == "inferencedata")
+    ):
+        return _from_arviz(result, name=model_name, diagnostics=diagnostics)
+    if adapter == "econml" or (adapter == "auto" and module.startswith("econml")):
+        return _from_econml(result, name=model_name, diagnostics=diagnostics)
+    if adapter in {"sklearn", "scikit-learn"} or (adapter == "auto" and module.startswith("sklearn")):
+        return _from_sklearn_like(result, name=model_name, diagnostics=diagnostics)
+    if adapter not in {"auto", "generic", "generic-object"}:
+        valid = [
+            "auto",
+            "arch",
+            "arviz",
+            "doubleml",
+            "econml",
+            "generic",
+            "lifelines",
+            "limiteddepkit",
+            "linearmodels",
+            "pyfixest",
+            "sklearn",
+            "statsmodels",
+            *_CUSTOM_ADAPTERS,
+        ]
+        raise ValueError(f"Unknown adapter '{adapter}'. Valid adapters: {', '.join(dict.fromkeys(valid))}.")
     return _from_generic_object(result, name=model_name, diagnostics=diagnostics)
