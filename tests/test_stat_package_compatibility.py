@@ -161,6 +161,7 @@ def test_sklearn_real_linear_and_multiclass_models() -> None:
 
 
 def test_sklearn_prediction_only_model_has_actionable_error() -> None:
+    pytest.importorskip("sklearn")
     from sklearn.cluster import KMeans
 
     fitted = KMeans(n_clusters=2, random_state=1, n_init=2).fit([[0.0], [1.0], [10.0], [11.0]])
