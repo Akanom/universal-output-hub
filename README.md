@@ -6,6 +6,7 @@
 [![CI](https://github.com/Akanom/universal-output-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Akanom/universal-output-hub/actions/workflows/ci.yml)
 [![Publish](https://github.com/Akanom/universal-output-hub/actions/workflows/publish.yml/badge.svg)](https://github.com/Akanom/universal-output-hub/actions/workflows/publish.yml)
 [![Downloads](https://static.pepy.tech/badge/universal-output-hub/month)](https://pepy.tech/project/universal-output-hub)
+
 `universal-output-hub` is a lightweight Python reporting layer for collecting model results, regression tables, statistical tables, diagnostics, notes, and graphs into one reproducible output bundle.
 
 It is designed as a broader Python alternative to Stata-style reporting tools such as `outreg2`, `esttab`, and `asdoc`, but with a wider scope: not only regression tables, but also ordinary tables, figures, metadata, diagnostics, table notes, and complete report exports.
